@@ -1,0 +1,1760 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+    <title>ProudGeonQuiz</title>
+
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#07152f">
+    <meta name="description" content="ProudGeonQuiz is a mobile-first learning quiz game with 80-level progression, rewards, and offline play.">
+    <meta name="application-name" content="ProudGeonQuiz">
+    <link rel="stylesheet" href="style.css">
+
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+
+</head>
+
+
+<body data-theme="original">
+<div id="globalLiveRegion" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
+<!-- GAME AUDIO -->
+<audio id="mottoMusic" src="motto-music.mp3" loop preload="none"></audio>
+<audio id="homeMusic" src="home-music.mp3" loop preload="none"></audio>
+<audio id="clickSound" src="click.mp3" preload="auto"></audio>
+<audio id="correctSound" src="correct.mp3" preload="auto"></audio>
+<audio id="wrongSound" src="wrong.mp3" preload="auto"></audio>
+<audio id="gameMusic" src="game-music.mp3" loop preload="none"></audio>
+<audio id="victoryMusic" src="victory.mp3" preload="none"></audio>
+
+<!-- =================================
+     STEP 1–3 INTRO FLOW
+================================== -->
+<div id="introFlow" class="intro-flow" aria-label="ProudGeonQuiz introduction">
+
+    <!-- =========================
+         STEP 1 — INTRO
+    ========================== -->
+    <section class="intro-screen intro-step active" data-step="1">
+
+        <div class="intro-stars" aria-hidden="true">
+            ✦　★　✧　★　✦
+        </div>
+
+        <div class="intro-panel">
+
+            <div class="intro-icon trophy" aria-hidden="true">
+                🏆
+            </div>
+
+            <h1>
+                <span>PROUD</span>
+                <strong>GEON QUIZ.3</strong>
+            </h1>
+
+            <div class="neon-divider">
+                <i></i>
+                <b>☆</b>
+                <i></i>
+            </div>
+
+            <p class="intro-description">
+                TEST YOUR KNOWLEDGE<br>
+                CHALLENGE YOUR LIMIT, LET<br>
+                EXPLORE NEW THINGS<br>
+                RIGHT NOW !!!
+            </p>
+
+            <button class="intro-action" onclick="introContinue()">
+                CONTINUE <b>›</b>
+            </button>
+
+        </div>
+
+        <div class="intro-decor" aria-hidden="true">
+            <span>🌎</span>
+            <span>⭐</span>
+            <span>✏️</span>
+        </div>
+
+    </section>
+
+
+    <!-- =========================
+         STEP 2 — MOTTO
+    ========================== -->
+    <section class="intro-screen intro-step" data-step="2">
+
+        <div class="intro-stars" aria-hidden="true">
+            ✦　★　✧　★　✦
+        </div>
+
+        <div class="intro-panel">
+
+            <div class="motto-icon" aria-hidden="true">
+                💬
+            </div>
+
+            <h2>
+                <span>TODAY'S</span> MOTTO
+            </h2>
+
+            <div class="neon-divider">
+                <i></i>
+                <b>“</b>
+                <i></i>
+            </div>
+
+            <div class="motto-copy">
+
+                <p>
+                    SUCCESS IS NOT MEASURED<br>
+                    BY HOW MANY QUESTIONS YOU<br>
+                    ANSWERED CORRECTLY BUT<br>
+                    BY THE WILLINGNESS TO LEARN<br>
+                    FROM EVERY MISTAKE.
+                </p>
+
+                <p>
+                    ALWAYS REMEMBER THAT<br>
+                    FAILURE IS A PART OF<br>
+                    OUR SUCCESS.
+                </p>
+
+            </div>
+
+            <div class="motto-author">
+                — BY PROUD GEON
+            </div>
+
+            <button class="intro-action" onclick="introNext()">
+                NEXT <b>››</b>
+            </button>
+
+            <div class="screen-caption">
+                MOTTO — AUTHOR
+            </div>
+
+        </div>
+
+        <div class="intro-decor" aria-hidden="true">
+            <span>📖</span>
+            <span>⭐</span>
+            <span>💡</span>
+        </div>
+
+    </section>
+
+
+    <!-- =========================
+         STEP 3 — WELCOME
+    ========================== -->
+    <section class="intro-screen intro-step" data-step="3">
+
+        <div class="intro-stars" aria-hidden="true">
+            ✦　★　✧　★　✦
+        </div>
+
+        <div class="intro-panel">
+
+            <h2 class="welcome-title">
+                WELCOME BACK<br>
+                <span>PLAYER</span>
+            </h2>
+
+            <div class="neon-divider">
+                <i></i>
+                <b>☆</b>
+                <i></i>
+            </div>
+
+            <div class="welcome-copy">
+
+                <p>
+                    GOOD DAY PLAYER, THIS GAME<br>
+                    DESIGN/CREATED TO HELP OUR MIND<br>
+                    THINK FASTER, IMPROVE OUR CRITICAL<br>
+                    THINKING AND PROBLEM SOLVING.
+                </p>
+
+                <p>
+                    THIS GAME DESIGN TO<br>
+                    TEST THE LEVEL OF KNOWLEDGE<br>
+                    YOU/WE HAVE NOW.
+                </p>
+
+                <p>
+                    YOU'RE MY COURAGE<br>
+                    WHEN I'M WORRY IN THE<br>
+                    DEAD OF NIGHT.
+                </p>
+
+            </div>
+
+            <button class="intro-action proceed" onclick="proceedToHome()">
+                PROCEED <b>›››</b>
+            </button>
+
+            <div class="version-label">
+                Version 1.3
+            </div>
+
+        </div>
+
+        <div class="intro-decor" aria-hidden="true">
+            <span>💡</span>
+            <span>⭐</span>
+            <span>📚</span>
+        </div>
+
+    </section>
+
+</div>
+
+<!-- =================================
+     SUBJECT SELECTION
+================================== -->
+<div id="subjectSelection" class="subject-selection" role="dialog" aria-modal="true" aria-labelledby="subjectSelectionTitle" aria-label="Subject selection" aria-hidden="true">
+    <div class="subject-selection-box">
+        
+        <div class="selection-kicker">PROUDGEONQUIZ</div>
+        <h2 id="subjectSelectionTitle">MATH SUBJECT SELECTION</h2>
+        <p class="selection-description">The questions in this subject 1 and 2 depend on the subject you selected earlier. The higher the level, the harder the questions are.</p>
+
+        <div class="quiz-choice">
+            <div class="quiz-choice-head"><span>BOX 1</span><strong id="quizATitle">Subject 1 / Quiz A</strong></div>
+            <div class="quiz-level">LEVEL 1–80</div>
+            <button onclick="startSelectedQuiz('A')">PLAY / START YOUR QUIZ NOW</button>
+        </div>
+
+        <div class="quiz-choice">
+            <div class="quiz-choice-head"><span>BOX 2</span><strong id="quizBTitle">Subject 2 / Quiz B</strong></div>
+            <div class="quiz-level">LEVEL 1-80</div>
+            <button onclick="startSelectedQuiz('B')">PLAY / START YOUR QUIZ NOW</button>
+        </div>
+
+        <button class="selection-back" onclick="closeSubjectSelection()">← BACK TO HOME</button>
+        <div class="selection-version">Geon's Game Version 1.3</div>
+    </div>
+</div>
+
+<!-- =================================
+     PHASE 3 — SELECT A LEVEL
+================================== -->
+<section
+    id="levelSelection"
+    class="level-selection"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="levelSelectionTitle"
+    aria-hidden="true">
+
+    <div class="level-selection-box">
+        <div class="selection-kicker">PROUDGEONQUIZ</div>
+        <h2 id="levelSelectionTitle">SELECT A LEVEL</h2>
+        <p id="levelSelectionDescription" class="level-selection-description">Choose any level from 01 to 80.</p>
+
+        <div
+            id="levelSelectionGrid"
+            class="level-selection-grid"
+            aria-label="Select a level">
+        </div>
+
+        <button type="button" class="selection-back level-selection-back" onclick="closeLevelSelection()">← BACK</button>
+    </div>
+</section>
+
+<!-- =================================
+     QUIZ SCREEN — STEP 1B
+================================== -->
+<section
+    id="quizScreen"
+    class="quiz-screen"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="quizQuestionText"
+    aria-hidden="true">
+
+    <div class="quiz-screen-box">
+
+        <!-- TOP BAR -->
+<div class="quiz-topbar">
+
+    <button
+        type="button"
+        class="quiz-back"
+        onclick="closeQuizScreen()">
+        ← BACK
+    </button>
+
+    <div class="quiz-level">
+        LEVEL <span id="quizLevel">1</span>
+    </div>
+
+    <div class="quiz-timer">
+        ⏱ <span id="quizTimer">30</span>
+    </div>
+
+</div>
+
+
+        <!-- PLAYER STATUS -->
+        <div class="quiz-status">
+
+            <div class="quiz-stat coins">
+                <small>COINS</small>
+                <strong>🪙 <span id="quizCoins">0</span></strong>
+            </div>
+
+            <div class="quiz-stat lives">
+                <small>LIVES</small>
+                <strong>❤️ <span id="quizLives">8</span></strong>
+            </div>
+
+            <div class="quiz-stat score">
+                <small>SCORE</small>
+                <strong>⭐ <span id="quizScore">0</span></strong>
+            </div>
+
+            <div class="quiz-stat points">
+                <small>POINTS</small>
+                <strong>💎 <span id="quizPoints">0</span></strong>
+            </div>
+
+        </div>
+
+
+
+        <!-- QUIZ ITEM BAR -->
+        <div
+            id="quizItemBar"
+            class="quiz-item-bar"
+            aria-label="Quiz items"
+            aria-live="polite">
+        </div>
+
+        <!-- QUESTION META -->
+        <div class="quiz-question-meta">
+            <div class="quiz-question-number">
+                QUESTION <span id="quizQuestionNumber">1</span> / <span id="quizQuestionTotal">80</span>
+            </div>
+            <div class="quiz-streak" data-streak="0" aria-label="Current streak: 0">
+                🔥 <span id="quizStreak">0</span>
+            </div>
+        </div>
+
+
+        <!-- QUESTION BOX -->
+        <div class="quiz-question-box" id="quizQuestionBox">
+            <div class="quiz-question-label">QUESTION</div>
+            <h2 id="quizQuestionText">Loading question...</h2>
+        </div>
+
+        <!-- ANSWERS -->
+        <div class="quiz-answers" id="quizAnswers">
+            <button type="button" class="quiz-answer" data-answer-index="0"></button>
+            <button type="button" class="quiz-answer" data-answer-index="1"></button>
+            <button type="button" class="quiz-answer" data-answer-index="2"></button>
+            <button type="button" class="quiz-answer" data-answer-index="3"></button>
+        </div>
+
+        <!-- NEXT -->
+        <button type="button" id="quizNextButton" class="quiz-next" disabled>NEXT →</button>
+
+    </div>
+
+</section>
+
+
+<!-- =================================
+     STORY QUIZ — STORY SELECTION
+================================== -->
+<div id="storySelectionPanel" class="story-quiz-panel" role="dialog" aria-modal="true"
+     aria-labelledby="storySelectionTitle" aria-hidden="true">
+    <div class="story-quiz-box story-selection-box">
+        <button type="button" class="story-back" onclick="closeStoryQuizToHome()">← BACK</button>
+        <div class="story-kicker">PROUDGEONQUIZ</div>
+        <h2 id="storySelectionTitle">📖 STORY QUIZ</h2>
+        <p class="story-subtitle">Choose a story to read</p>
+        <div id="storyLibrary" class="story-library" aria-live="polite"></div>
+    </div>
+</div>
+
+<!-- =================================
+     STORY QUIZ — STORY READER
+================================== -->
+<div id="storyReaderPanel" class="story-quiz-panel" role="dialog" aria-modal="true"
+     aria-labelledby="storyReaderTitle" aria-hidden="true">
+    <div class="story-quiz-box story-reader-box">
+        <button type="button" class="story-back" onclick="backFromStoryReader()">← BACK</button>
+        <h2 id="storyReaderTitle">📖 STORY</h2>
+        <p id="storyReaderMeta" class="story-reader-meta"></p>
+        <div id="storyReaderText" class="story-reader-text" tabindex="0" aria-label="Story text"></div>
+        <button type="button" class="story-primary-action" onclick="startStoryQuestions()">START QUESTIONS</button>
+    </div>
+</div>
+
+<!-- =================================
+     STORY QUIZ — QUESTIONS
+================================== -->
+<div id="storyQuestionPanel" class="story-quiz-panel" role="dialog" aria-modal="true"
+     aria-labelledby="storyQuestionText" aria-hidden="true">
+    <div class="story-quiz-box story-question-box">
+        <div class="story-question-top">
+            <button type="button" class="story-back" onclick="backFromStoryQuestions()">← BACK</button>
+            <span class="story-question-label">📖 STORY QUIZ</span>
+        </div>
+        <h2 id="storyQuestionTitle">The Lost Compass</h2>
+        <div class="story-question-number">QUESTION <span id="storyQuestionNumber">1</span> / <span id="storyQuestionTotal">5</span></div>
+        <div class="story-question-card">
+            <h3 id="storyQuestionText">Loading question...</h3>
+        </div>
+        <div id="storyQuestionAnswers" class="story-question-answers" aria-label="Story answer choices"></div>
+        <div id="storyAnswerFeedback" class="story-answer-feedback" role="status" aria-live="polite"></div>
+        <button type="button" id="storyQuestionNext" class="story-primary-action" onclick="nextStoryQuestion()" disabled>NEXT →</button>
+    </div>
+</div>
+
+<!-- =================================
+     STORY QUIZ — RESULTS
+================================== -->
+<div id="storyResultsPanel" class="story-quiz-panel" role="dialog" aria-modal="true"
+     aria-labelledby="storyResultsTitle" aria-hidden="true">
+    <div class="story-quiz-box story-results-box">
+        <div class="story-result-icon" aria-hidden="true">🎉</div>
+        <div class="story-kicker">STORY QUIZ</div>
+        <h2 id="storyResultsTitle">STORY COMPLETE</h2>
+        <h3 id="storyResultTitle">The Lost Compass</h3>
+        <strong id="storyResultScore" class="story-result-score">0 / 5</strong>
+        <p id="storyResultAccuracy">Accuracy: 0%</p>
+        <p id="storyResultRewards" class="story-result-rewards" aria-live="polite">REWARDS: +0 POINTS • +0 COINS</p>
+        <div class="story-result-stats">
+            <span id="storyResultCorrect">Correct Answers: 0</span>
+            <span id="storyResultWrong">Wrong Answers: 0</span>
+            <span id="storyResultBest">Best Score: 0 / 5</span>
+        </div>
+        <div class="story-result-actions">
+            <button type="button" class="story-primary-action" onclick="retryStory()">TRY AGAIN</button>
+            <button type="button" class="story-back story-results-back" onclick="backFromStoryResults()">BACK TO STORIES</button>
+        </div>
+    </div>
+</div>
+
+<!-- =================================
+     START YOUR MISSION — GAME
+================================== -->
+<div id="missionPanel" class="story-quiz-panel mission-panel" role="dialog" aria-modal="true"
+     aria-labelledby="missionScreenTitle" aria-hidden="true">
+    <div class="story-quiz-box mission-box">
+        <div class="mission-top">
+            <button type="button" class="story-back" onclick="closeMissionToHome()">← BACK</button>
+            <span class="story-question-label">⚔️ YOUR MISSION</span>
+            <span id="missionProgress" class="mission-progress">1 / 5</span>
+        </div>
+
+        <div class="mission-kicker">MISSION <span id="missionNumber">1</span> / 5</div>
+        <h2 id="missionScreenTitle">YOUR MISSION</h2>
+
+        <div class="mission-meta">
+            <span id="missionSubject">MATH</span>
+            <span id="missionDifficulty">CORE</span>
+        </div>
+
+        <div class="mission-story-card">
+            <div class="mission-card-label">PROBLEM STORY</div>
+            <p id="missionStoryText"></p>
+        </div>
+
+        <div class="mission-objective-card">
+            <div class="mission-card-label">OBJECTIVE</div>
+            <p id="missionObjective"></p>
+        </div>
+
+        <div class="story-question-card mission-question-card">
+            <div class="mission-card-label">QUESTION</div>
+            <h3 id="missionQuestionText"></h3>
+        </div>
+
+        <div id="missionAnswers" class="story-question-answers mission-answers" aria-label="Mission answer choices"></div>
+        <div id="missionAnswerFeedback" class="mission-answer-feedback" role="status" aria-live="polite"></div>
+        <div id="missionExplanation" class="mission-explanation" aria-live="polite"></div>
+
+        <button type="button" id="missionNext" class="story-primary-action" onclick="nextMission()" disabled>NEXT MISSION →</button>
+    </div>
+</div>
+
+<!-- =================================
+     START YOUR MISSION — RESULT
+================================== -->
+<div id="missionResultPanel" class="story-quiz-panel mission-panel" role="dialog" aria-modal="true"
+     aria-labelledby="missionResultTitle" aria-hidden="true">
+    <div class="story-quiz-box story-results-box mission-result-box">
+        <div class="story-result-icon" aria-hidden="true">🏆</div>
+        <div class="story-kicker">YOUR MISSION</div>
+        <h2 id="missionResultTitle">MISSION RUN COMPLETE</h2>
+        <strong id="missionResultScore" class="story-result-score">0 / 5</strong>
+        <p id="missionResultAccuracy">Accuracy: 0%</p>
+        <p id="missionResultCompleted">MISSIONS COMPLETED: 0 / 5</p>
+        <p id="missionResultRoute">YOUR MISSION RUN IS COMPLETE.</p>
+        <p id="missionResultRewards" class="story-result-rewards" aria-live="polite">REWARDS: +0 POINTS • +0 COINS</p>
+
+        <div class="story-result-actions">
+            <button type="button" class="story-primary-action" onclick="retryMissions()">RUN AGAIN</button>
+            <button type="button" class="story-back story-results-back" onclick="closeMissionToHome()">CONTINUE TO HOME</button>
+        </div>
+    </div>
+</div>
+
+<div class="game-container">
+
+
+    <!-- =================================
+         TOP MENU
+    ================================== -->
+
+    <div class="top-buttons">
+
+        <button onclick="openMenu()">
+
+            <span>MENU</span>
+
+            <b>☰</b>
+
+        </button>
+
+
+        <button onclick="openLeaderboardsPanel()">
+
+            <span>BOARD</span>
+
+            <b>≋</b>
+
+        </button>
+
+
+        <button onclick="openTitlesPanel()">
+
+            <span>TITLES</span>
+
+            <b>🏅</b>
+
+        </button>
+
+    </div>
+
+
+
+    <!-- =================================
+         PROFILE + STATS
+    ================================== -->
+
+    <section class="profile-section">
+
+
+        <!-- PROFILE -->
+
+        <div class="profile-card">
+
+            <div id="profileAvatar" class="avatar"
+                 role="button"
+                 tabindex="0"
+                 aria-label="Open Profile Selection"
+                 onclick="openProfilePanel()"
+                 onkeydown="if(event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openProfilePanel(); }">
+
+                <div class="head"></div>
+
+                <div class="body"></div>
+
+            </div>
+
+
+            <button
+                class="profile-btn"
+                onclick="openProfilePanel()">
+
+                PROFILE
+
+            </button>
+
+            <div id="profileCurrentName" class="profile-current-name">QUIZ EXPLORER</div>
+
+            <!-- PLAYER CODE NAME -->
+
+            <button
+                class="code-name-display"
+                onclick="openCodePanel()">
+
+                <span id="playerCodeDisplay">
+
+                    CODE NAME
+
+                </span>
+
+            </button>
+
+        </div>
+
+
+
+        <!-- STATS -->
+
+        <div class="stats">
+
+
+            <div class="stat-box">
+
+                <label>
+                    HIGHEST LEVEL:
+                </label>
+
+                <strong id="highestLevel">
+                    0
+                </strong>
+
+            </div>
+
+
+            <div class="stat-box">
+
+                <label>
+                    CURRENT LEVEL:
+                </label>
+
+                <strong id="currentLevel">
+                    0
+                </strong>
+
+            </div>
+
+
+            <div class="stat-box">
+
+                <label>
+                    HIGHEST SCORE:
+                </label>
+
+                <strong id="highestScore">
+                    0
+                </strong>
+
+            </div>
+
+
+            <div class="stat-box">
+
+                <label>
+                    CURRENT SCORE:
+                </label>
+
+                <strong id="currentScore">
+                    0
+                </strong>
+
+            </div>
+
+
+        </div>
+
+    </section>
+
+
+
+    <!-- =================================
+         SHOP / ITEM / COINS / POINTS
+    ================================== -->
+
+    <section class="items-row">
+
+
+        <!-- SHOP -->
+
+        <button
+            class="action-card shop"
+            onclick="openShopPanel()">
+
+            <span>🛍️</span>
+
+            <b>SHOP</b>
+
+        </button>
+
+
+
+        <!-- ITEM -->
+
+        <button
+            class="action-card item"
+            onclick="openInventoryPanel()">
+
+            <span>⚔️</span>
+
+            <b>ITEM</b>
+
+        </button>
+
+
+
+        <!-- COINS -->
+
+        <div class="currency coins">
+
+            <small>
+                COINS
+            </small>
+
+            <div>
+
+                🪙
+
+                <span id="coins">
+                    0
+                </span>
+
+            </div>
+
+        </div>
+
+
+
+        <!-- POINTS -->
+
+        <button
+            class="currency points"
+            onclick="openPointsConversionPanel()">
+
+            <small>
+                POINTS
+            </small>
+
+            <div>
+
+                💎
+
+                <span id="points">
+                    0
+                </span>
+
+            </div>
+
+        </button>
+
+
+    </section>
+
+    <!-- =================================
+         SUBJECT PROGRESS
+    ================================== -->
+
+    <section class="subject-progress-section" aria-label="Subject progress">
+        <div class="subject-progress-titlebar">
+            <span>SUBJECT PROGRESS</span>
+            <strong id="homeQuestionerIndicator">QUESTIONER: PREVIOUS</strong>
+        </div>
+
+        <div class="subject-progress-row" data-subject="MATH">
+            <div class="subject-progress-head">
+                <span class="subject-progress-name">▣ MATH</span>
+                <strong class="subject-progress-level">LEVEL 0/80</strong><span class="subject-mastery-label">BEGINNER</span>
+            </div>
+            <div class="subject-progress-track" role="progressbar" aria-label="MATH progress" aria-valuemin="0" aria-valuemax="80" aria-valuenow="0">
+                <span class="subject-progress-fill"></span>
+            </div>
+        </div>
+
+        <div class="subject-progress-row" data-subject="PSYCHOLOGY">
+            <div class="subject-progress-head">
+                <span class="subject-progress-name">🧠 PSYCHOLOGY</span>
+                <strong class="subject-progress-level">LEVEL 0/80</strong><span class="subject-mastery-label">BEGINNER</span>
+            </div>
+            <div class="subject-progress-track" role="progressbar" aria-label="PSYCHOLOGY progress" aria-valuemin="0" aria-valuemax="80" aria-valuenow="0">
+                <span class="subject-progress-fill"></span>
+            </div>
+        </div>
+
+        <div class="subject-progress-row" data-subject="SCIENCE">
+            <div class="subject-progress-head">
+                <span class="subject-progress-name">⚗ SCIENCE</span>
+                <strong class="subject-progress-level">LEVEL 0/80</strong><span class="subject-mastery-label">BEGINNER</span>
+            </div>
+            <div class="subject-progress-track" role="progressbar" aria-label="SCIENCE progress" aria-valuemin="0" aria-valuemax="80" aria-valuenow="0">
+                <span class="subject-progress-fill"></span>
+            </div>
+        </div>
+
+        <div class="subject-progress-row" data-subject="TECH 1">
+            <div class="subject-progress-head">
+                <span class="subject-progress-name">⚙ TECH 1</span>
+                <strong class="subject-progress-level">LEVEL 0/80</strong><span class="subject-mastery-label">BEGINNER</span>
+            </div>
+            <div class="subject-progress-track" role="progressbar" aria-label="TECH 1 progress" aria-valuemin="0" aria-valuemax="80" aria-valuenow="0">
+                <span class="subject-progress-fill"></span>
+            </div>
+        </div>
+
+        <div class="subject-progress-row" data-subject="TECH 2">
+            <div class="subject-progress-head">
+                <span class="subject-progress-name">▣ TECH 2</span>
+                <strong class="subject-progress-level">LEVEL 0/80</strong><span class="subject-mastery-label">BEGINNER</span>
+            </div>
+            <div class="subject-progress-track" role="progressbar" aria-label="TECH 2 progress" aria-valuemin="0" aria-valuemax="80" aria-valuenow="0">
+                <span class="subject-progress-fill"></span>
+            </div>
+        </div>
+
+    </section>
+
+    <!-- =================================
+         OVER ALL PROGRESS
+    ================================== -->
+
+    <div class="section-title">
+
+        YOUR OVER ALL PROGRESS
+
+    </div>
+
+
+    <section class="progress-card">
+
+
+        <div class="welcome">
+
+            WELCOME BACK
+
+        </div>
+
+
+        <div class="swords">
+
+            ⚔️
+
+        </div>
+
+
+        <div class="challenger">
+
+            CHALLENGER
+
+        </div>
+
+
+    </section>
+
+    <!-- =================================
+         STORY QUIZ ENTRY
+    ================================== -->
+    <button type="button" class="story-home-entry" onclick="openStoryQuiz()" aria-label="Open Story Quiz">
+        <span aria-hidden="true">📖</span>
+        <span>STORY QUIZ</span>
+    </button>
+
+    <!-- =================================
+         START YOUR MISSION ENTRY
+    ================================== -->
+    <button type="button" class="mission-home-entry" onclick="openStartYourMission()" aria-label="Start Your Mission">
+        <span aria-hidden="true">⚔️</span>
+        <span>START YOUR MISSION</span>
+    </button>
+
+    <!-- =================================
+         MODERN HOME CONTINUE CARD
+    ================================== -->
+    <section id="continueJourneyCard" class="continue-journey-card" aria-label="Continue your journey">
+        <div class="continue-journey-copy">
+            <span class="continue-kicker">CONTINUE YOUR JOURNEY</span>
+            <strong id="continueJourneyTitle">READY FOR YOUR NEXT QUIZ</strong>
+            <small id="continueJourneyMeta">Choose a subject to begin.</small>
+            <div class="continue-progress" role="progressbar" aria-label="Overall quiz progress" aria-valuemin="0" aria-valuemax="80" aria-valuenow="0">
+                <span id="continueJourneyFill"></span>
+            </div>
+            <small id="continueJourneyProgress">0 / 80</small>
+        </div>
+        <button type="button" id="continueJourneyButton" class="continue-journey-button" onclick="continueJourney()">CONTINUE</button>
+    </section>
+
+    <!-- =================================
+         DAILY CHALLENGE ACCESS
+    ================================== -->
+    <button type="button" class="daily-challenge-card" onclick="openDailyChallengePanel()" aria-label="Open Daily Challenge">
+        <span class="daily-challenge-icon">🏆</span>
+        <span class="daily-challenge-copy">
+            <strong>DAILY CHALLENGE</strong>
+            <small id="dailyChallengeHomeStatus">10 QUESTIONS • DAILY REPLAY</small>
+        </span>
+        <span class="daily-challenge-arrow">→</span>
+    </button>
+
+    <!-- =================================
+         REVIEWER MODE ACCESS — PHASE 3
+    ================================== -->
+    <button type="button" class="reviewer-mode-card" onclick="openReviewerModePanel()" aria-label="Open Reviewer Mode">
+        <span class="reviewer-mode-icon">📚</span>
+        <span class="reviewer-mode-copy">
+            <strong>REVIEWER MODE</strong>
+            <small>REVIEW AVAILABLE QUESTIONS</small>
+        </span>
+        <span class="reviewer-mode-arrow">→</span>
+    </button>
+
+    <!-- =================================
+         FAVORITE SUBJECT
+    ================================== -->
+
+    <div class="section-title">
+
+        SELECT YOUR FAVORITE SUBJECT
+
+    </div>
+
+
+
+    <section class="play-section">
+
+
+        <!-- MATH -->
+
+        <div class="play-row math">
+
+            <span>
+                ▣ &nbsp; MATH
+            </span>
+
+            <button onclick="playGame('MATH')">
+
+                PLAY
+
+            </button>
+
+        </div>
+
+
+
+        <!-- SCIENCE -->
+
+        <div class="play-row science">
+
+            <span>
+                ⚗ &nbsp; SCIENCE
+            </span>
+
+            <button onclick="playGame('SCIENCE')">
+
+                PLAY
+
+            </button>
+
+        </div>
+
+
+
+        <!-- PSYCHOLOGY -->
+
+        <div class="play-row psychology">
+
+            <span>
+                🧠 &nbsp; PSYCHOLOGY
+            </span>
+
+            <button onclick="playGame('PSYCHOLOGY')">
+
+                PLAY
+
+            </button>
+
+        </div>
+
+
+
+        <!-- TECH 1 -->
+
+        <div class="play-row tech1">
+
+            <span>
+                ⚙ &nbsp; TECH 1
+            </span>
+
+            <button onclick="playGame('TECH 1')">
+
+                PLAY
+
+            </button>
+
+        </div>
+
+
+
+        <!-- TECH 2 -->
+
+        <div class="play-row tech2">
+
+            <span>
+                ▣ &nbsp; TECH 2
+            </span>
+
+            <button onclick="playGame('TECH 2')">
+
+                PLAY
+
+            </button>
+
+        </div>
+
+
+    </section>
+
+</div>
+
+<!-- Offline readiness remains in normal document order after the complete game shell. -->
+<div id="offlineStatus" class="offline-status" role="status" aria-live="polite">ONLINE • CHECKING OFFLINE READINESS…</div>
+
+
+<!-- =================================
+     PROFILE PANEL
+================================== -->
+<div id="profilePanel" class="profile-panel" role="dialog" aria-modal="true" aria-labelledby="profilePanelTitle" aria-hidden="true">
+    <div class="profile-panel-box">
+        <h2 id="profilePanelTitle">👤 PROFILE</h2>
+        <p class="profile-panel-note">Choose your player profile.</p>
+        <div id="profileChoices" class="profile-choices"></div>
+        <div class="profile-panel-actions">
+            <button type="button" class="profile-save" onclick="saveProfile()">💾 SAVE</button>
+            <button type="button" class="profile-back" onclick="closeProfilePanel()">← BACK</button>
+        </div>
+    </div>
+</div>
+
+<!-- =================================
+     POINTS → COINS PANEL
+================================== -->
+<div id="pointsConversionPanel" class="conversion-panel" role="dialog" aria-modal="true" aria-labelledby="pointsConversionTitle" aria-hidden="true">
+    <div class="conversion-panel-box">
+        <h2 id="pointsConversionTitle">💎 POINTS → 🪙 COINS</h2>
+        <div class="conversion-balance">
+            <div><small>POINTS BALANCE</small><strong id="conversionPointsBalance">0</strong></div>
+            <div><small>COINS BALANCE</small><strong id="conversionCoinsBalance">0</strong></div>
+        </div>
+        <div class="conversion-rule">100 POINTS = 1 COIN</div>
+        <label class="conversion-label" for="pointsConversionAmount">POINTS TO CONVERT</label>
+        <input id="pointsConversionAmount" class="conversion-input" type="number" min="0" step="1" value="0" inputmode="numeric" oninput="updateConversionPreview()">
+        <div class="conversion-preview">You receive: <strong id="conversionCoinsResult">0 COINS</strong></div>
+        <div class="conversion-panel-actions">
+            <button type="button" class="conversion-confirm" onclick="confirmPointsConversion()">💾 SAVE / CONFIRM</button>
+            <button type="button" class="conversion-back" onclick="closePointsConversionPanel()">← BACK</button>
+        </div>
+    </div>
+</div>
+
+<!-- =================================
+     PHASE 3 — REVIEWER MODE PANEL
+================================== -->
+<div id="reviewerModePanel" class="reviewer-mode-panel" aria-hidden="true">
+    <div class="reviewer-mode-box" role="dialog" aria-modal="true" aria-labelledby="reviewerModeTitle">
+        <div class="reviewer-mode-heading">
+            <span class="reviewer-mode-trophy">📚</span>
+            <div>
+                <h2 id="reviewerModeTitle">REVIEWER MODE</h2>
+                <p>LEARN WITHOUT CHANGING NORMAL PROGRESS</p>
+            </div>
+        </div>
+
+        <label class="reviewer-mode-label" for="reviewerSubjectSelect">SUBJECT</label>
+        <select id="reviewerSubjectSelect" class="reviewer-mode-select" onchange="updateReviewerModePanel()"></select>
+
+        <label class="reviewer-mode-label" for="reviewerQuestionerSelect">QUESTIONER</label>
+        <select id="reviewerQuestionerSelect" class="reviewer-mode-select" onchange="updateReviewerModePanel()">
+            <option value="previous">PREVIOUS</option>
+            <option value="new">NEW</option>
+        </select>
+
+        <label class="reviewer-mode-label" for="reviewerFilterSelect">FILTER</label>
+        <select id="reviewerFilterSelect" class="reviewer-mode-select" onchange="updateReviewerModePanel()">
+            <option value="all">ALL AVAILABLE</option>
+            <option value="completed">COMPLETED / ENCOUNTERED</option>
+        </select>
+
+        <div class="reviewer-mode-summary">
+            <div><small>QUESTIONS AVAILABLE</small><strong id="reviewerAvailableCount">0</strong></div>
+            <div><small>SESSION SIZE</small><strong id="reviewerSessionCount">0</strong></div>
+        </div>
+        <p id="reviewerModeMessage" class="reviewer-mode-message">Choose a subject to begin reviewing.</p>
+
+        <div class="reviewer-mode-actions">
+            <button type="button" class="reviewer-mode-start" id="reviewerModeStartButton" onclick="startReviewerMode()">📚 START REVIEW</button>
+            <button type="button" class="reviewer-mode-back" onclick="closeReviewerModePanel()">← BACK</button>
+        </div>
+    </div>
+</div>
+
+<!-- =================================
+     PHASE 3 — REVIEWER RESULT
+================================== -->
+<div id="reviewerResultPanel" class="reviewer-mode-panel" aria-hidden="true">
+    <div class="reviewer-mode-box reviewer-result-box" role="dialog" aria-modal="true" aria-labelledby="reviewerResultTitle">
+        <div class="reviewer-mode-trophy">📚</div>
+        <p class="reviewer-result-kicker">REVIEW SESSION</p>
+        <h2 id="reviewerResultTitle">REVIEW COMPLETE</h2>
+        <p id="reviewerResultText">0 QUESTIONS REVIEWED</p>
+        <p id="reviewerResultSubject" class="reviewer-result-subject">—</p>
+        <button type="button" class="reviewer-mode-back" onclick="closeReviewerResult()">← BACK</button>
+    </div>
+</div>
+
+<!-- =================================
+     DAILY CHALLENGE PANEL
+================================== -->
+<div id="dailyChallengePanel" class="daily-challenge-panel" aria-hidden="true">
+    <div class="daily-challenge-box" role="dialog" aria-modal="true" aria-labelledby="dailyChallengeTitle">
+        <div class="daily-challenge-heading">
+            <span class="daily-challenge-trophy">🏆</span>
+            <div>
+                <h2 id="dailyChallengeTitle">DAILY CHALLENGE</h2>
+                <p id="dailyChallengeDate">DATE: —</p>
+            </div>
+        </div>
+        <div class="daily-challenge-summary">
+            <div><small>QUESTIONS</small><strong>10</strong></div>
+            <div><small>PROGRESS</small><strong id="dailyChallengeProgress">0 / 10</strong></div>
+            <div><small>REWARD</small><strong>💎 +100 • 🪙 +5</strong></div>
+        </div>
+        <div class="daily-challenge-track" aria-hidden="true"><span id="dailyChallengePanelFill"></span></div>
+        <p id="dailyChallengeMessage" class="daily-challenge-message">Complete 10 questions to claim today's bonus.</p>
+        <div class="daily-challenge-actions">
+            <button type="button" id="dailyChallengeStartButton" class="daily-challenge-start" onclick="startDailyChallenge()">🏆 START CHALLENGE</button>
+            <button type="button" class="daily-challenge-back" onclick="closeDailyChallengePanel()">← BACK</button>
+        </div>
+    </div>
+</div>
+
+<!-- =================================
+     DAILY CHALLENGE RESULT
+================================== -->
+<div id="dailyChallengeResultPanel" class="daily-challenge-panel" aria-hidden="true">
+    <div class="daily-challenge-box daily-challenge-result-box" role="dialog" aria-modal="true" aria-labelledby="dailyChallengeResultTitle">
+        <div class="daily-challenge-trophy">🏆</div>
+        <p class="daily-challenge-kicker">TODAY'S CHALLENGE</p>
+        <h2 id="dailyChallengeResultTitle">DAILY CHALLENGE COMPLETE!</h2>
+        <p id="dailyChallengeResultText">10 / 10</p>
+        <div class="daily-challenge-reward-result">
+            <span>💎 <strong id="dailyChallengeRewardPoints">+100 POINTS</strong></span>
+            <span>🪙 <strong id="dailyChallengeRewardCoins">+5 COINS</strong></span>
+        </div>
+        <button type="button" class="daily-challenge-back" onclick="closeDailyChallengeResult()">← BACK</button>
+    </div>
+</div>
+
+<!-- =================================
+     SHOP PANEL
+================================== -->
+<div id="shopPanel" class="item-system-panel" aria-hidden="true">
+    <div class="item-system-box shop-box">
+        <div class="item-system-header">
+            <h2>🛍️ SHOP</h2>
+            <div class="item-system-coins">🪙 <span id="shopCoinBalance">0</span></div>
+        </div>
+        <div id="shopItems" class="shop-items" aria-live="polite"></div>
+        <button type="button" class="item-system-back" onclick="closeShopPanel()">← BACK</button>
+    </div>
+</div>
+
+<!-- =================================
+     ITEM INVENTORY PANEL
+================================== -->
+<div id="inventoryPanel" class="item-system-panel" aria-hidden="true">
+    <div class="item-system-box inventory-box">
+        <div class="item-system-header">
+            <h2>🎒 ITEM INVENTORY</h2>
+            <div class="item-system-coins">🪙 <span id="inventoryCoinBalance">0</span></div>
+        </div>
+        <div id="inventoryItems" class="inventory-items" aria-live="polite"></div>
+        <button type="button" class="item-system-back" onclick="closeInventoryPanel()">← BACK</button>
+    </div>
+</div>
+
+<!-- =================================
+     MAIN MENU PANEL
+================================== -->
+
+<div
+    id="menuPanel"
+    class="menu-panel"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="menuTitle"
+    aria-hidden="true">
+
+    <div class="menu-box">
+
+
+        <!-- CLOSE -->
+        <!-- TITLE -->
+
+        <h2 id="menuTitle">
+
+            ☰ <span>MENU</span>
+
+        </h2>
+
+
+        <!-- SETTINGS -->
+
+        <button
+            class="menu-option"
+            onclick="openMenuPage('settings')">
+
+            ⚙️ SETTINGS
+
+        </button>
+
+
+        <!-- ABOUT -->
+
+        <button
+            class="menu-option"
+            onclick="openMenuPage('about')">
+
+            ℹ️ ABOUT GAME
+
+        </button>
+
+
+        <!-- HOW TO PLAY -->
+
+        <button
+            class="menu-option"
+            onclick="openMenuPage('howToPlay')">
+
+            📖 HOW TO PLAY
+
+        </button>
+
+
+        <!-- ACHIEVEMENTS -->
+
+        <button
+            class="menu-option"
+            onclick="openMenuPage('achievements')">
+
+            🏆 ACHIEVEMENTS
+
+        </button>
+
+
+        <!-- STATISTICS -->
+
+        <button
+            class="menu-option"
+            onclick="openMenuPage('statistics')">
+
+            📊 STATISTICS
+
+        </button>
+
+
+        <!-- PRIVACY -->
+
+        <button
+            class="menu-option"
+            onclick="openMenuPage('privacy')">
+
+            🔒 PRIVACY / DATA
+
+        </button>
+
+
+        <!-- BACK TO HOME -->
+
+        <button
+            class="menu-option back-home"
+            onclick="closeMenu()">
+
+            🚪 BACK TO HOME
+
+        </button>
+
+
+    </div>
+
+</div>
+
+
+
+<!-- =================================
+     SETTINGS PANEL
+================================== -->
+
+<div
+    id="settingsPanel"
+    class="settings-panel"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="settingsTitle"
+    aria-hidden="true">
+
+    <div class="settings-box">
+
+
+        <!-- CLOSE -->
+        <!-- TITLE -->
+
+        <h2 id="settingsTitle">
+
+            ⚙️ <span>SETTINGS</span>
+
+        </h2>
+
+
+        <!-- BACKGROUND MUSIC -->
+
+        <div class="setting-row">
+
+            <span>
+
+                🎵 Background Music
+
+            </span>
+
+
+            <button
+                id="musicToggle"
+                class="setting-toggle"
+                onclick="toggleMusic()"
+                aria-pressed="true">
+
+                ON
+
+            </button>
+
+        </div>
+
+
+
+        <!-- AI READER -->
+
+        <div class="setting-row">
+            <span>
+                🗣️ AI Reader
+            </span>
+
+            <button
+                id="aiReaderToggle"
+                class="setting-toggle"
+                onclick="toggleAIReader()"
+                aria-pressed="true">
+                ON
+            </button>
+        </div>
+
+
+        <!-- SOUND EFFECTS -->
+
+        <div class="setting-row">
+
+            <span>
+
+                🔊 Sound Effects
+
+            </span>
+
+
+            <button
+                id="soundToggle"
+                class="setting-toggle"
+                onclick="toggleSound()"
+                aria-pressed="true">
+
+                ON
+
+            </button>
+
+        </div>
+
+
+
+        <!-- QUESTIONER -->
+
+        <div class="theme-title">
+            📚 QUESTIONER
+        </div>
+
+        <button
+            id="previousQuestioner"
+            class="theme-option"
+            onclick="setQuestioner('previous')">
+            PREVIOUS QUESTIONER
+        </button>
+
+        <button
+            id="newQuestioner"
+            class="theme-option"
+            onclick="setQuestioner('new')">
+            NEW QUESTIONER
+        </button>
+
+
+        <!-- THEME -->
+
+        <div class="theme-title">
+
+            🌙 THEME
+
+        </div>
+
+
+        <div class="theme-preview-grid" aria-label="Choose one of three visual themes">
+            <button id="originalMode" class="theme-option theme-preview original-preview" type="button" onclick="setTheme('original')" aria-pressed="false">
+                <span class="theme-preview-swatch">🎮</span>
+                <strong>ORIGINAL</strong>
+                <small>Classic ProudGeonQuiz</small>
+                <b class="theme-selected-label">SELECT</b>
+            </button>
+            <button id="lightMode" class="theme-option theme-preview light-preview" type="button" onclick="setTheme('light')" aria-pressed="false">
+                <span class="theme-preview-swatch">☀️</span>
+                <strong>LIGHT</strong>
+                <small>Clean learning mode</small>
+                <b class="theme-selected-label">SELECT</b>
+            </button>
+            <button id="darkMode" class="theme-option theme-preview dark-preview" type="button" onclick="setTheme('dark')" aria-pressed="false">
+                <span class="theme-preview-swatch">🌙</span>
+                <strong>DARK</strong>
+                <small>Focused night mode</small>
+                <b class="theme-selected-label">SELECT</b>
+            </button>
+        </div>
+
+
+
+        <div class="save-tools" aria-label="Save data tools">
+            <button type="button" class="save-tool-button" onclick="exportSaveData()">EXPORT SAVE DATA</button>
+            <button type="button" class="save-tool-button" onclick="importSaveData()">IMPORT SAVE DATA</button>
+            <input id="saveImportInput" type="file" accept="application/json,.json" hidden>
+        </div>
+
+        <button type="button" class="reset-progress-button" onclick="resetProgress()">
+            🧹 RESET GAME PROGRESS
+        </button>
+
+        <!-- RESET -->
+
+        <button
+            class="reset-settings"
+            onclick="resetSettings()">
+
+            🔄 RESET SETTINGS
+
+        </button>
+
+
+
+        <!-- SAVE -->
+
+        <button
+            class="save-settings"
+            onclick="saveSettings()">
+
+            💾 SAVE / APPLY
+
+        </button>
+
+
+    </div>
+
+</div>
+
+
+
+<!-- =================================
+     MENU INFORMATION PANEL
+================================== -->
+
+<div id="infoPanel" class="info-panel" role="dialog" aria-modal="true" aria-labelledby="infoTitle" aria-hidden="true">
+    <div class="info-box">
+        <h2 id="infoTitle">ℹ️ ABOUT GAME</h2>
+        <div id="infoContent" class="info-content"></div>
+        <button class="info-back" onclick="closeInfo()">← BACK TO MENU</button>
+    </div>
+</div>
+
+<!-- =================================
+     LEADERBOARDS PANEL
+================================== -->
+<section id="leaderboardsPanel" class="leaderboards-panel" role="dialog" aria-modal="true" aria-labelledby="leaderboardsTitle" aria-hidden="true">
+    <div class="leaderboards-panel-box">
+        <div class="leaderboards-kicker">🏆 PROUDGEONQUIZ</div>
+        <h2 id="leaderboardsTitle">LEADERBOARDS</h2>
+        <div id="leaderboardsContent" class="leaderboards-content"></div>
+        <button type="button" class="leaderboards-back" onclick="closeLeaderboardsPanel()">← BACK</button>
+    </div>
+</section>
+
+<!-- =================================
+     TITLES PANEL
+     5 SUBJECTS × 2 QUIZZES × 80 LEVELS
+     16 TITLES PER QUIZ
+================================== -->
+<section id="titlesPanel" class="titles-panel" role="dialog" aria-modal="true" aria-labelledby="titlesPanelTitle" aria-hidden="true">
+    <div class="titles-panel-box">
+
+        <div class="titles-kicker">🏅 PROUDGEONQUIZ TITLES</div>
+        <h2 id="titlesPanelTitle">SELECT SUBJECT</h2>
+
+        <div id="titlesContent" class="titles-content"></div>
+
+        <button type="button"
+                id="titlesBackButton"
+                class="titles-back"
+                onclick="titlesGoBack()">
+            ← BACK
+        </button>
+
+    </div>
+</section>
+
+<!-- =================================
+     QUIZ BACK CONFIRMATION
+================================== -->
+<div id="quizBackConfirm" class="game-overlay" aria-hidden="true">
+    <div class="game-overlay-box">
+        <div class="overlay-icon">↩️</div>
+        <h2>LEAVE QUIZ?</h2>
+        <p>Where do you want to go back?</p>
+        <div class="overlay-actions">
+            <button type="button" onclick="confirmQuizBack('level')">← BACK TO LEVEL SELECTION</button>
+            <button type="button" onclick="confirmQuizBack('subject')">BACK TO SUBJECT</button>
+            <button type="button" onclick="confirmQuizBack('home')">BACK TO HOME</button>
+            <button type="button" class="secondary" onclick="closeQuizBackConfirm()">CANCEL</button>
+        </div>
+    </div>
+</div>
+
+<!-- =================================
+     ACHIEVEMENT SCREEN
+================================== -->
+<div id="achievementScreen" class="game-overlay achievement-overlay" aria-hidden="true">
+    <div class="game-overlay-box achievement-box">
+        <div class="overlay-icon">🏆</div>
+        <div class="achievement-kicker">LEVEL MILESTONE COMPLETE</div>
+        <h2 id="achievementTitle">ACHIEVEMENT</h2>
+        <p id="achievementLevelText">LEVEL 5 COMPLETE</p>
+        <div class="achievement-stats">
+            <div><small>SCORE</small><strong id="achievementScore">0</strong></div>
+            <div><small>COINS</small><strong id="achievementCoins">0</strong></div>
+            <div><small>POINTS</small><strong id="achievementPoints">0</strong></div>
+            <div><small>LIVES</small><strong id="achievementLives">3</strong></div>
+        </div>
+        <div class="achievement-title-card">
+            <small>TITLE ACHIEVEMENT</small>
+            <strong id="achievementTitleName">Locked</strong>
+        </div>
+        <button type="button" onclick="continueAfterAchievement()">CONTINUE →</button>
+    </div>
+</div>
+
+<!-- =================================
+     GAME OVER SCREEN
+================================== -->
+<div id="gameOverScreen" class="game-overlay" aria-hidden="true">
+    <div class="game-overlay-box">
+        <div class="overlay-icon">💔</div>
+        <h2>GAME OVER</h2>
+        <p id="gameOverText">Your lives reached zero.</p>
+        <div class="result-stats">
+            <div><small>SCORE</small><strong id="gameOverScore">0</strong></div>
+            <div><small>COINS</small><strong id="gameOverCoins">0</strong></div>
+            <div><small>POINTS</small><strong id="gameOverPoints">0</strong></div>
+        </div>
+        <div class="overlay-actions">
+            <button type="button" onclick="restartCurrentQuiz()">PLAY AGAIN</button>
+            <button type="button" onclick="goToSubjectFromResult()">BACK TO SUBJECT</button>
+            <button type="button" class="secondary" onclick="goHomeFromResult()">BACK TO HOME</button>
+        </div>
+    </div>
+</div>
+
+<!-- =================================
+     VICTORY SCREEN
+================================== -->
+<div id="victoryScreen" class="game-overlay victory-overlay" aria-hidden="true">
+    <div class="game-overlay-box victory-box">
+        <div class="victory-hero">
+            <div class="overlay-icon victory-crown">👑</div>
+            <div class="achievement-kicker">LEVEL COMPLETE</div>
+            <h2>🎉 LEVEL COMPLETE!</h2>
+            <p>Great run! Your actual results and rewards are shown below.</p>
+        </div>
+
+        <div class="victory-level-badge">
+            <small>COMPLETED LEVEL</small>
+            <strong id="victoryLevel">80</strong>
+        </div>
+
+        <div class="result-stats victory-result-stats">
+            <div><small>SCORE</small><strong id="victoryScore">0</strong></div>
+            <div><small>CORRECT</small><strong id="victoryCorrect">0</strong></div>
+            <div><small>STREAK</small><strong id="victoryStreak">0</strong></div>
+            <div><small>PROGRESS</small><strong id="victoryProgress">0 / 80</strong></div>
+        </div>
+
+        <div class="victory-reward-card">
+            <div class="victory-card-title">🎁 REWARDS</div>
+            <div class="victory-reward-grid">
+                <div><span>⭐ SCORE</span><strong id="victoryScoreEarned">+0</strong></div>
+                <div><span>🪙 COINS</span><strong id="victoryCoins">+0</strong></div>
+                <div><span>⭐ POINTS</span><strong id="victoryPoints">+0</strong></div>
+            </div>
+        </div>
+
+        <div class="victory-progress-card">
+            <div>
+                <small>SUBJECT PROGRESS</small>
+                <strong id="victorySubjectProgress">80 / 80</strong>
+            </div>
+            <div>
+                <small>SUBJECT MASTERY</small>
+                <strong id="victoryMastery">GRAND MASTER</strong>
+            </div>
+        </div>
+
+        <div class="victory-title-card">
+            <small>OVERALL TITLE</small>
+            <strong id="victoryTitle">Ultimate Champion</strong>
+        </div>
+
+        <div class="overlay-actions">
+            <button type="button" onclick="goHomeFromResult()">BACK TO HOME</button>
+            <button type="button" onclick="goToSubjectFromResult()">BACK TO SUBJECT SELECTION</button>
+            <button type="button" onclick="restartCurrentQuiz()">PLAY AGAIN</button>
+        </div>
+    </div>
+</div>
+
+<!-- =================================
+     COMING SOON POPUP
+================================== -->
+
+<div
+    id="comingSoonPopup"
+    class="coming-popup"
+    aria-hidden="true">
+
+
+    <div class="coming-box">
+
+
+        <div class="coming-icon">
+
+            🚧
+
+        </div>
+
+
+        <h2 id="comingTitle">
+
+            COMING SOON
+
+        </h2>
+
+
+        <p id="comingText">
+
+            This feature is currently
+            under development.
+
+        </p>
+
+
+        <button onclick="closeComingSoon()">
+
+            OK
+
+        </button>
+
+
+    </div>
+
+</div>
+
+
+
+<!-- =================================
+     CODE NAME PANEL
+================================== -->
+
+<div
+    id="codePanel"
+    class="code-panel"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="codePanelTitle"
+    aria-hidden="true">
+
+    <div class="code-panel-box">
+        <button type="button" class="close-code-panel" onclick="closeCodePanel()" aria-label="Close code name dialog">×</button>
+<h2 id="codePanelTitle">
+
+            ENTER YOUR SHORT<br>
+
+            <span>6 CODE NAME</span>
+
+        </h2>
+
+
+        <p>
+
+            Create your short player code
+
+        </p>
+
+
+        <input
+            type="text"
+            id="codeInput"
+            maxlength="6"
+            placeholder="ENTER CODE"
+            autocomplete="off"
+            oninput="limitCodeName(this)"
+        >
+
+
+        <button
+            class="save-code"
+            onclick="saveCodeName()">
+
+            SAVE
+
+        </button>
+
+
+    </div>
+
+</div>
+
+
+
+<script src="questions.embedded.js"></script>
+<script src="questions.new.embedded.js"></script>
+<script src="src/gameCore.js"></script>
+<script src="src/state/storage.js"></script>
+<script src="src/data/questionValidator.js"></script>
+<script src="src/quiz/scoring.js"></script>
+<script src="src/progression/streaks.js"></script>
+<script src="src/data/dailyChallenge.js"></script>
+<script src="src/audio/audioManager.js"></script>
+<script src="src/accessibility/reader.js"></script>
+<script src="src/story/storyData.js"></script>
+<script src="src/story/storyQuiz.js"></script>
+<script src="src/mission/missionData.js"></script>
+<script src="src/mission/mission.js"></script>
+<script src="script.js"></script>
+
+
+</body>
+
+</html>

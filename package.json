@@ -1,0 +1,11 @@
+{
+  "name": "proudgeonquiz",
+  "version": "5.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "check": "node --check script.js",
+    "browser-smoke": "python3 tests/browser_smoke.py",
+    "static-check": "python3 tests/static_check.py"
+  }
+}

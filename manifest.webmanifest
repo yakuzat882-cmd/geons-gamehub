@@ -1,0 +1,23 @@
+{
+  "name": "ProudGeonQuiz \u2014 Geon's GameHub",
+  "short_name": "ProudGeonQuiz",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#050816",
+  "theme_color": "#19cfff",
+  "description": "A progressive learning quiz game hub with offline play.",
+  "icons": [
+    {
+      "src": "icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
