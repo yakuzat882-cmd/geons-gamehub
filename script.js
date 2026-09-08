@@ -4653,9 +4653,9 @@ function updateAchievementCompletion() {
 
 
 /* =====================================
-   AI READER — ISOLATED ACCESSIBILITY FEATURE
-   TrebEdit/file:// safe: native speech only.
-   Active only on Motto, Welcome and Quiz screens.
+   AI READER — MOBILE-SAFE ACCESSIBILITY FEATURE
+   Native Web Speech API.
+   Supports Motto, Welcome, Quiz, Story and Mission.
 ===================================== */
 
 let aiReaderSpeaking = false;
@@ -4663,17 +4663,48 @@ let aiReaderInitialized = false;
 let aiReaderLastScreenKey = "";
 let aiReaderLastQuizKey = "";
 let aiReaderObserver = null;
-let aiReaderSpeechMusic = null;
 let aiReaderSpeechToken = 0;
 let aiReaderReadTimer = null;
+let aiReaderVoice = null;
+let aiReaderUserActivated = false;
 
 function aiReaderSupported() {
     try {
-        return "speechSynthesis" in window &&
-            typeof window.speechSynthesis.cancel === "function";
+        return (
+            "speechSynthesis" in window &&
+            typeof window.speechSynthesis.speak === "function" &&
+            typeof window.speechSynthesis.cancel === "function" &&
+            typeof window.SpeechSynthesisUtterance === "function"
+        );
     } catch (error) {
-        console.warn("AI Reader error:", error);
+        console.warn("AI Reader support check failed:", error);
         return false;
+    }
+}
+
+function aiReaderLoadVoice() {
+    if (!aiReaderSupported()) return null;
+
+    try {
+        const voices = window.speechSynthesis.getVoices();
+        if (!voices || !voices.length) return null;
+
+        const preferred = voices.find(v =>
+            /^en(-|_)/i.test(v.lang || "") &&
+            /google|microsoft|samantha|daniel|alex|enhanced/i.test(v.name || "")
+        );
+
+        aiReaderVoice =
+            preferred ||
+            voices.find(v => /^en(-|_)/i.test(v.lang || "")) ||
+            voices.find(v => /^fil(-|_)/i.test(v.lang || "")) ||
+            voices[0] ||
+            null;
+
+        return aiReaderVoice;
+    } catch (error) {
+        console.warn("AI Reader voice detection failed:", error);
+        return null;
     }
 }
 
@@ -4684,14 +4715,17 @@ function aiReaderIsEnabled() {
 function aiReaderActiveIntroStep() {
     const intro = document.getElementById("introFlow");
     if (!intro || !aiReaderVisible(intro)) return null;
+
     const active = intro.querySelector(".intro-step.active");
     if (!active || !aiReaderVisible(active)) return null;
+
     const step = Number(active.dataset.step);
     return step === 2 || step === 3 ? active : null;
 }
 
 function aiReaderVisible(el) {
     if (!el) return false;
+
     try {
         const style = window.getComputedStyle(el);
         return !el.hidden &&
@@ -4701,13 +4735,13 @@ function aiReaderVisible(el) {
             style.visibility !== "hidden" &&
             style.opacity !== "0";
     } catch (error) {
-        console.warn("AI Reader error:", error);
         return false;
     }
 }
 
 function aiReaderText(el) {
     if (!el) return "";
+
     try {
         const clone = el.cloneNode(true);
         clone.querySelectorAll(
@@ -4718,7 +4752,7 @@ function aiReaderText(el) {
             .replace(/\s+/g, " ")
             .trim();
     } catch (error) {
-        console.warn("AI Reader error:", error);
+        console.warn("AI Reader text extraction failed:", error);
         return "";
     }
 }
@@ -4726,22 +4760,27 @@ function aiReaderText(el) {
 function aiReaderCurrentScreen() {
     try {
         const intro = aiReaderActiveIntroStep();
+
         if (intro) {
             const step = Number(intro.dataset.step);
-            return { key: `intro-${step}`, el: intro, type: step === 2 ? "motto" : "welcome" };
+            return {
+                key: `intro-${step}`,
+                el: intro,
+                type: step === 2 ? "motto" : "welcome"
+            };
         }
 
         const achievement = document.getElementById("achievementScreen");
-const victory = document.getElementById("victoryScreen");
-const gameOver = document.getElementById("gameOverScreen");
+        const victory = document.getElementById("victoryScreen");
+        const gameOver = document.getElementById("gameOverScreen");
 
-if (
-    (achievement && aiReaderVisible(achievement)) ||
-    (victory && aiReaderVisible(victory)) ||
-    (gameOver && aiReaderVisible(gameOver))
-) {
-    return null;
-}
+        if (
+            (achievement && aiReaderVisible(achievement)) ||
+            (victory && aiReaderVisible(victory)) ||
+            (gameOver && aiReaderVisible(gameOver))
+        ) {
+            return null;
+        }
 
         const missionPanel = document.getElementById("missionPanel");
         if (missionPanel && aiReaderVisible(missionPanel)) {
@@ -4763,45 +4802,14 @@ if (
             return { key: "quiz", el: quiz, type: "quiz" };
         }
     } catch (error) {
-        console.warn("AI Reader error:", error);
-    }
-    return null;
-}
-
-function aiReaderPauseIntroMusic(screenType) {
-    if (screenType !== "motto" && screenType !== "welcome") return null;
-
-    const music = document.getElementById("mottoMusic");
-    if (music && !music.paused) {
-        // pause() preserves currentTime, so the same intro session can resume.
-        music.pause();
-        return music;
+        console.warn("AI Reader screen detection failed:", error);
     }
 
     return null;
 }
 
-function aiReaderResumeMusic(music) {
-    try {
-        if (!music || !settingsData.music) return;
-        if (document.hidden) return;
-
-        // Intro speech may only resume the shared intro track.
-        if (music.id === "mottoMusic") {
-            const intro = document.getElementById("introFlow");
-            const active = intro ? intro.querySelector(".intro-step.active") : null;
-            const step = active ? Number(active.dataset.step) : 0;
-            if (step !== 2 && step !== 3) return;
-        }
-
-        if (music.paused) music.play().catch(() => {});
-    } catch (error) {
-        console.warn("AI Reader error:", error);
-    }
-}
-
-function aiReaderStop(resumeMusic = false) {
-    const token = ++aiReaderSpeechToken;
+function aiReaderStop() {
+    ++aiReaderSpeechToken;
 
     if (aiReaderReadTimer) {
         clearTimeout(aiReaderReadTimer);
@@ -4813,105 +4821,170 @@ function aiReaderStop(resumeMusic = false) {
             window.speechSynthesis.cancel();
         }
     } catch (error) {
-        console.warn("AI Reader error:", error);
+        console.warn("AI Reader stop failed:", error);
     }
 
     aiReaderSpeaking = false;
-
-    const music = aiReaderSpeechMusic;
-    aiReaderSpeechMusic = null;
-
-    if (resumeMusic && token === aiReaderSpeechToken) {
-        aiReaderResumeMusic(music);
-    }
 }
 
-function aiReaderStoryFeedback(text) {
+function aiReaderSpeak(text, fromUserGesture = false) {
     try {
-        if (!aiReaderIsEnabled()) return;
-        const screen = aiReaderCurrentScreen();
-        if (!screen || screen.type !== "story-question") return;
-        aiReaderStop();
-        aiReaderSpeak(String(text || "").trim());
-    } catch (error) {
-        console.warn("AI Reader feedback error:", error);
-    }
-}
-
-function aiReaderSpeak(text) {
-    try {
-        if (!aiReaderIsEnabled()) return;
+        if (!aiReaderIsEnabled()) return false;
 
         const clean = String(text || "")
             .replace(/\s+/g, " ")
             .trim();
 
-        if (!clean) return;
+        if (!clean) return false;
 
-        const screen = aiReaderCurrentScreen();
-        if (!screen) {
-            aiReaderStop();
-            return;
+        if (fromUserGesture) {
+            aiReaderUserActivated = true;
         }
 
+        const screen = aiReaderCurrentScreen();
+        if (!screen) return false;
+
+        const synthesis = window.speechSynthesis;
+        if (!synthesis || typeof synthesis.speak !== "function") return false;
+
+        aiReaderStop();
+
         const token = ++aiReaderSpeechToken;
-
-try {
-    window.speechSynthesis.cancel();
-} catch (error) {
-    console.warn("AI Reader cancel error:", error);
-}
-
-        // AI Reader is intentionally restricted to the Quiz Screen.
-        const music = null;
-        aiReaderSpeechMusic = null;
-
         const utterance = new SpeechSynthesisUtterance(clean);
+
+        const voice = aiReaderVoice || aiReaderLoadVoice();
+
+        if (voice) {
+            utterance.voice = voice;
+            if (voice.lang) utterance.lang = voice.lang;
+        } else {
+            utterance.lang = navigator.language || "en-US";
+        }
+
         utterance.rate = 0.9;
         utterance.pitch = 1;
         utterance.volume = 1;
 
         utterance.onstart = function () {
-            if (token !== aiReaderSpeechToken) return;
-            aiReaderSpeaking = true;
-        };
-
-        const finish = function () {
-            if (token !== aiReaderSpeechToken) return;
-            aiReaderSpeaking = false;
-            aiReaderSpeechMusic = null;
-
-            const current = aiReaderCurrentScreen();
-            if (music && current && current.key === screen.key) {
-                aiReaderResumeMusic(music);
+            if (token === aiReaderSpeechToken) {
+                aiReaderSpeaking = true;
             }
         };
 
-        utterance.onend = finish;
+        utterance.onend = function () {
+            if (token === aiReaderSpeechToken) {
+                aiReaderSpeaking = false;
+            }
+        };
+
         utterance.onerror = function (error) {
-            if (token !== aiReaderSpeechToken) return;
-            aiReaderSpeaking = false;
-            aiReaderSpeechMusic = null;
-
-            const current = aiReaderCurrentScreen();
-            if (music && current && current.key === screen.key) {
-                aiReaderResumeMusic(music);
+            if (token === aiReaderSpeechToken) {
+                aiReaderSpeaking = false;
             }
-
-            console.warn("AI Reader error:", error);
+            console.warn("AI Reader speech error:", error);
         };
 
-        window.speechSynthesis.speak(utterance);
+        synthesis.speak(utterance);
+
+        return true;
     } catch (error) {
         aiReaderSpeaking = false;
-        const music = aiReaderSpeechMusic;
-        aiReaderSpeechMusic = null;
-        aiReaderResumeMusic(music);
-        console.warn("AI Reader error:", error);
+        console.warn("AI Reader speak failed:", error);
+        return false;
     }
 }
 
-function aiReaderReadCurrentScreen(force) {
+function aiReaderReadVisibleScreenFromUserGesture() {
+    try {
+        if (!aiReaderIsEnabled()) return false;
+
+        const screen = aiReaderCurrentScreen();
+        if (!screen) return false;
+
+        aiReaderLastScreenKey = "";
+        aiReaderLastQuizKey = "";
+
+        const text = aiReaderBuildCurrentScreenText(screen);
+        if (!text) return false;
+
+        return aiReaderSpeak(text, true);
+    } catch (error) {
+        console.warn("AI Reader manual read failed:", error);
+        return false;
+    }
+}
+
+function aiReaderBuildCurrentScreenText(screen) {
+    if (!screen) return "";
+
+    if (screen.type === "mission") {
+        const story = document.getElementById("missionStoryText");
+        const question = document.getElementById("missionQuestionText");
+
+        return [
+            story ? aiReaderText(story) : "",
+            question ? aiReaderText(question) : ""
+        ].filter(Boolean).join(". ");
+    }
+
+    if (screen.type === "story-reader") {
+        const storyText = document.getElementById("storyReaderText");
+        return storyText ? aiReaderText(storyText) : "";
+    }
+
+    if (screen.type === "story-question") {
+        const question = document.getElementById("storyQuestionText");
+        const questionText = question ? aiReaderText(question) : "";
+
+        const number = document.getElementById("storyQuestionNumber");
+        const questionNumber = number
+            ? String(number.textContent || "").trim()
+            : "";
+
+        return questionNumber
+            ? `Question ${questionNumber}. ${questionText}`
+            : questionText;
+    }
+
+    if (screen.type === "quiz") {
+        const question = document.getElementById("quizQuestionText");
+        const questionText = question
+            ? (question.innerText || question.textContent || "")
+                .replace(/\s+/g, " ")
+                .trim()
+            : "";
+
+        if (!questionText) return "";
+
+        return `Question ${quizState.index + 1}. ${questionText}`;
+    }
+
+    if (screen.type === "motto") {
+        const title = screen.el.querySelector("h2");
+        const motto = screen.el.querySelector(".motto-copy");
+        const author = screen.el.querySelector(".motto-author");
+
+        return [
+            title ? aiReaderText(title) : "",
+            motto ? aiReaderText(motto) : "",
+            author ? aiReaderText(author) : ""
+        ].filter(Boolean).join(". ");
+    }
+
+    if (screen.type === "welcome") {
+        const title = screen.el.querySelector(".welcome-title");
+        const content = screen.el.querySelector(".welcome-copy");
+
+        return [
+            title ? aiReaderText(title) : "",
+            content ? aiReaderText(content) : ""
+        ].filter(Boolean).join(". ");
+    }
+
+    return "";
+}
+
+function aiReaderReadCurrentScreen(force = false) {
     try {
         if (!aiReaderIsEnabled()) {
             aiReaderStop();
@@ -4919,6 +4992,7 @@ function aiReaderReadCurrentScreen(force) {
         }
 
         const screen = aiReaderCurrentScreen();
+
         if (!screen || !aiReaderVisible(screen.el)) {
             aiReaderStop();
             aiReaderLastScreenKey = "";
@@ -4926,138 +5000,55 @@ function aiReaderReadCurrentScreen(force) {
             return;
         }
 
-        if (screen.type === "mission") {
-            const story = document.getElementById("missionStoryText");
-            const question = document.getElementById("missionQuestionText");
-            const storyText = story ? aiReaderText(story) : "";
-            const questionText = question ? aiReaderText(question) : "";
-            const number = document.getElementById("missionNumber");
-            const missionNumber = number ? String(number.textContent || "").trim() : "";
-            const missionKey = screen.key + ":" + missionNumber + ":" + storyText + ":" + questionText;
-            if (!storyText && !questionText) return;
-            if (!force && missionKey === aiReaderLastQuizKey) return;
-            aiReaderLastQuizKey = missionKey;
-            aiReaderLastScreenKey = screen.key;
-            aiReaderStop();
-            const speechParts = [];
-            if (storyText) speechParts.push(storyText);
-            if (questionText) speechParts.push(questionText);
-            const speechText = speechParts.join(". ");
-            aiReaderReadTimer = setTimeout(() => {
-                aiReaderReadTimer = null;
-                const current = aiReaderCurrentScreen();
-                if (!current || current.type !== "mission") return;
-                aiReaderSpeak(speechText);
-            }, 100);
-            return;
-        }
+        const text = aiReaderBuildCurrentScreenText(screen);
+        if (!text) return;
 
-        if (screen.type === "story-reader") {
-            const storyText = document.getElementById("storyReaderText");
-            const text = storyText ? aiReaderText(storyText) : "";
-            const storyKey = screen.key + ":" + (text.length ? text.slice(0, 120) : "empty");
-            if (!force && storyKey === aiReaderLastQuizKey) return;
-            aiReaderLastQuizKey = storyKey;
-            aiReaderLastScreenKey = screen.key;
-            aiReaderStop();
-            if (text) aiReaderSpeak(text);
-            return;
-        }
-
-        if (screen.type === "story-question") {
-            const question = document.getElementById("storyQuestionText");
-            const questionText = question ? aiReaderText(question) : "";
-            if (!questionText) return;
-            const number = document.getElementById("storyQuestionNumber");
-            const questionNumber = number ? String(number.textContent || "").trim() : "";
-            const storyKey = screen.key + ":" + questionNumber + ":" + questionText;
-            if (!force && storyKey === aiReaderLastQuizKey) return;
-            aiReaderLastQuizKey = storyKey;
-            aiReaderLastScreenKey = screen.key;
-            aiReaderStop();
-            const speechText = questionNumber ? `Question ${questionNumber}. ${questionText}` : questionText;
-            aiReaderReadTimer = setTimeout(() => {
-                aiReaderReadTimer = null;
-                const current = aiReaderCurrentScreen();
-                if (!current || current.type !== "story-question") return;
-                aiReaderSpeak(speechText);
-            }, 100);
-            return;
-        }
+        let contentKey = screen.key + ":" + text;
 
         if (screen.type === "quiz") {
-            const question = document.getElementById("quizQuestionText");
-            const questionText = question
-                ? (question.innerText || question.textContent || "")
-                    .replace(/\s+/g, " ")
-                    .trim()
-                : "";
-
-            if (!questionText) return;
-
-            const quizKey =
-                screen.key + ":" +
+            contentKey += ":" +
                 quizState.index + ":" +
                 quizState.subject + ":" +
                 quizState.quizType;
-
-            if (!force && quizKey === aiReaderLastQuizKey) return;
-
-            aiReaderLastQuizKey = quizKey;
-            aiReaderLastScreenKey = screen.key;
-
-            aiReaderStop();
-
-            const questionNumber = quizState.index + 1;
-            const speechText = `Question ${questionNumber}. ${questionText}`;
-
-            aiReaderReadTimer = setTimeout(() => {
-                aiReaderReadTimer = null;
-                const current = aiReaderCurrentScreen();
-                if (!current || current.type !== "quiz") return;
-                if (quizState.index + 1 !== questionNumber) return;
-                aiReaderSpeak(speechText);
-            }, 150);
-            return;
         }
 
-        if (!force && screen.key === aiReaderLastScreenKey) return;
+        if (!force && contentKey === aiReaderLastQuizKey) return;
 
+        aiReaderLastQuizKey = contentKey;
         aiReaderLastScreenKey = screen.key;
-        aiReaderLastQuizKey = "";
 
-        let text = "";
+        aiReaderStop();
 
-        if (screen.type === "motto") {
-            const title = screen.el.querySelector("h2");
-            const motto = screen.el.querySelector(".motto-copy");
-            const author = screen.el.querySelector(".motto-author");
+        /*
+         * Automatic speech is allowed only after the browser has seen
+         * a user interaction. This prevents mobile autoplay restrictions
+         * from silently blocking the reader.
+         */
+        if (!aiReaderUserActivated) return;
 
-            text = [
-                title ? aiReaderText(title) : "",
-                motto ? aiReaderText(motto) : "",
-                author ? aiReaderText(author) : ""
-            ].filter(Boolean).join(". ");
-        }
+        aiReaderReadTimer = setTimeout(() => {
+            aiReaderReadTimer = null;
 
-        if (screen.type === "welcome") {
-            const title = screen.el.querySelector(".welcome-title");
-            const content = screen.el.querySelector(".welcome-copy");
+            const current = aiReaderCurrentScreen();
+            if (!current || current.key !== screen.key) return;
 
-            text = [
-                title ? aiReaderText(title) : "",
-                content ? aiReaderText(content) : ""
-            ].filter(Boolean).join(". ");
-        }
-
-        if (text) {
-            aiReaderStop();
             aiReaderSpeak(text);
-        } else {
-            aiReaderStop();
-        }
+        }, 120);
     } catch (error) {
-        console.warn("AI Reader error:", error);
+        console.warn("AI Reader read failed:", error);
+    }
+}
+
+function aiReaderStoryFeedback(text) {
+    try {
+        if (!aiReaderIsEnabled()) return;
+
+        const screen = aiReaderCurrentScreen();
+        if (!screen || screen.type !== "story-question") return;
+
+        aiReaderSpeak(String(text || "").trim(), true);
+    } catch (error) {
+        console.warn("AI Reader feedback error:", error);
     }
 }
 
@@ -5069,6 +5060,7 @@ function aiReaderRefresh(force = false) {
         }
 
         const screen = aiReaderCurrentScreen();
+
         if (!screen) {
             aiReaderStop();
             aiReaderLastScreenKey = "";
@@ -5078,13 +5070,14 @@ function aiReaderRefresh(force = false) {
 
         aiReaderReadCurrentScreen(force);
     } catch (error) {
-        console.warn("AI Reader error:", error);
+        console.warn("AI Reader refresh failed:", error);
     }
 }
 
 function aiReaderInit() {
     try {
         if (aiReaderInitialized) return;
+
         aiReaderInitialized = true;
 
         if (aiReaderObserver) {
@@ -5092,7 +5085,42 @@ function aiReaderInit() {
             aiReaderObserver = null;
         }
 
-        if (aiReaderSupported() && typeof MutationObserver !== "undefined") {
+        if (aiReaderSupported()) {
+            aiReaderLoadVoice();
+
+            if (typeof window.speechSynthesis.addEventListener === "function") {
+                window.speechSynthesis.addEventListener(
+                    "voiceschanged",
+                    aiReaderLoadVoice
+                );
+            }
+        }
+
+        /*
+         * Any real tap/click activates the reader for subsequent
+         * automatic screen reading. The actual speech can still be
+         * started manually through the reader control.
+         */
+        const activateReader = () => {
+            aiReaderUserActivated = true;
+
+            if (aiReaderIsEnabled()) {
+                aiReaderRefresh();
+            }
+        };
+
+        document.addEventListener("pointerdown", activateReader, {
+            passive: true
+        });
+
+        document.addEventListener("keydown", activateReader, {
+            passive: true
+        });
+
+        if (
+            aiReaderSupported() &&
+            typeof MutationObserver !== "undefined"
+        ) {
             aiReaderObserver = new MutationObserver(function (mutations) {
                 const relevant = mutations.some(m =>
                     m.type === "attributes" &&
@@ -5115,7 +5143,7 @@ function aiReaderInit() {
 
         window.addEventListener("beforeunload", aiReaderStop, { once: true });
     } catch (error) {
-        console.warn("AI Reader error:", error);
+        console.warn("AI Reader initialization failed:", error);
     }
 }
 
@@ -5227,15 +5255,41 @@ function updateSettingsDisplay() {
 
 function toggleAIReader() {
     settingsData.aiReader = !settingsData.aiReader;
+
     if (!settingsData.aiReader) {
         aiReaderStop();
         aiReaderLastScreenKey = "";
         aiReaderLastQuizKey = "";
+    } else {
+        /*
+         * The Settings button itself is a real user gesture.
+         * Mark the reader as activated so mobile browsers are
+         * allowed to start subsequent speech on supported screens.
+         */
+        aiReaderUserActivated = true;
+
+        aiReaderStop();
+        aiReaderLastScreenKey = "";
+        aiReaderLastQuizKey = "";
+
+        /*
+         * Settings is intentionally not a readable screen.
+         * If a supported screen is already active, read it now.
+         */
+        const screen = aiReaderCurrentScreen();
+        if (screen) {
+            const text = aiReaderBuildCurrentScreenText(screen);
+            if (text) aiReaderSpeak(text, true);
+        }
     }
+
     writeStoredJSON("proudGeonQuizSettings", settingsData);
     if (typeof syncVersionedSaveSnapshot === "function") syncVersionedSaveSnapshot();
     updateSettingsDisplay();
-    if (settingsData.aiReader) aiReaderRefresh(true);
+
+    if (settingsData.aiReader) {
+        aiReaderRefresh(true);
+    }
 }
 
 /* =====================================
