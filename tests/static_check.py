@@ -47,7 +47,7 @@ shell_match = re.search(r"const SHELL = \[(.*?)\];", worker, re.S)
 assert shell_match, "Service-worker shell list missing"
 for asset in re.findall(r'"([^\"]+)"', shell_match.group(1)):
     assert (ROOT / asset.removeprefix("./")).exists(), f"Missing shell asset: {asset}"
-assert re.search(r'CACHE_VERSION\s*=\s*"proudgeonquiz-v5-', worker)
+assert re.search(r'CACHE_VERSION\s*=\s*"proudgeonquiz-v7-', worker)
 
 for filename in ["questions.json", "questions.new.json"]:
     bank = json.loads((ROOT / filename).read_text(encoding="utf-8"))

@@ -4667,6 +4667,9 @@ let aiReaderSpeechToken = 0;
 let aiReaderReadTimer = null;
 let aiReaderVoice = null;
 let aiReaderUserActivated = false;
+let aiReaderAudio = null;
+let aiReaderAudioUrl = "";
+const AI_READER_TTS_ENDPOINT = "https://geon-ai-reader.yakuzat882.workers.dev";
 
 function aiReaderSupported() {
     try {
@@ -4709,7 +4712,7 @@ function aiReaderLoadVoice() {
 }
 
 function aiReaderIsEnabled() {
-    return Boolean(settingsData.aiReader) && aiReaderSupported();
+    return Boolean(settingsData.aiReader);
 }
 
 function aiReaderActiveIntroStep() {
@@ -4827,6 +4830,56 @@ function aiReaderStop() {
     aiReaderSpeaking = false;
 }
 
+function aiReaderSpeakRemote(clean, token, fromUserGesture) {
+    if (!fromUserGesture || !aiReaderUserActivated) return false;
+
+    aiReaderSpeaking = true;
+
+    fetch(AI_READER_TTS_ENDPOINT, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({text: clean})
+    })
+        .then(function(response) {
+            if (!response.ok) throw new Error("TTS HTTP " + response.status);
+            return response.blob();
+        })
+        .then(function(blob) {
+            if (token !== aiReaderSpeechToken) return;
+
+            const url = URL.createObjectURL(blob);
+            aiReaderAudioUrl = url;
+            const audio = new Audio(url);
+            aiReaderAudio = audio;
+
+            const cleanup = function() {
+                if (aiReaderAudio === audio) aiReaderAudio = null;
+                if (aiReaderAudioUrl === url) {
+                    URL.revokeObjectURL(url);
+                    aiReaderAudioUrl = "";
+                }
+                if (token === aiReaderSpeechToken) aiReaderSpeaking = false;
+            };
+
+            audio.onended = cleanup;
+            audio.onerror = cleanup;
+
+            const playPromise = audio.play();
+            if (playPromise && typeof playPromise.catch === "function") {
+                playPromise.catch(function(error) {
+                    cleanup();
+                    console.warn("AI Reader remote audio play failed:", error);
+                });
+            }
+        })
+        .catch(function(error) {
+            if (token === aiReaderSpeechToken) aiReaderSpeaking = false;
+            console.warn("AI Reader remote TTS failed:", error);
+        });
+
+    return true;
+}
+
 function aiReaderSpeak(text, fromUserGesture = false) {
     try {
         if (!aiReaderIsEnabled()) return false;
@@ -4845,11 +4898,14 @@ function aiReaderSpeak(text, fromUserGesture = false) {
         if (!screen) return false;
 
         const synthesis = window.speechSynthesis;
-        if (!synthesis || typeof synthesis.speak !== "function") return false;
 
         aiReaderStop();
 
         const token = ++aiReaderSpeechToken;
+
+        if (!synthesis || typeof synthesis.speak !== "function") {
+            return aiReaderSpeakRemote(clean, token, fromUserGesture);
+        }
         const utterance = new SpeechSynthesisUtterance(clean);
 
         const voice = aiReaderVoice || aiReaderLoadVoice();
@@ -5084,6 +5140,21 @@ function aiReaderInit() {
             aiReaderObserver.disconnect();
             aiReaderObserver = null;
         }
+
+    try {
+        if (aiReaderAudio) {
+            aiReaderAudio.pause();
+            aiReaderAudio.removeAttribute("src");
+            aiReaderAudio.load();
+            aiReaderAudio = null;
+        }
+        if (aiReaderAudioUrl) {
+            URL.revokeObjectURL(aiReaderAudioUrl);
+            aiReaderAudioUrl = "";
+        }
+    } catch (error) {
+        console.warn("AI Reader remote audio stop failed:", error);
+    }
 
         if (aiReaderSupported()) {
             aiReaderLoadVoice();
