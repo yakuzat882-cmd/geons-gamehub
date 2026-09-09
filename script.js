@@ -4970,6 +4970,8 @@ function aiReaderReadVisibleScreenFromUserGesture() {
     }
 }
 
+window.aiReaderReadVisibleScreenFromUserGesture = aiReaderReadVisibleScreenFromUserGesture;
+
 function aiReaderBuildCurrentScreenText(screen) {
     if (!screen) return "";
 
