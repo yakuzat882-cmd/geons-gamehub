@@ -4832,7 +4832,8 @@ function aiReaderStop() {
         if (aiReaderAudio) {
             try { aiReaderAudio.pause(); } catch (e) {}
             try { aiReaderAudio.currentTime = 0; } catch (e) {}
-            aiReaderAudio = null;
+            try { aiReaderAudio.src = ""; } catch (e) {}
+            try { aiReaderAudio.load(); } catch (e) {}
         }
     } catch (error) {
         console.warn("AI Reader remote audio stop failed:", error);
@@ -4849,7 +4850,8 @@ function aiReaderSpeakRemote(clean, token, fromUserGesture) {
         if (aiReaderAudio) {
             try { aiReaderAudio.pause(); } catch (e) {}
             try { aiReaderAudio.currentTime = 0; } catch (e) {}
-            aiReaderAudio = null;
+            try { aiReaderAudio.src = ""; } catch (e) {}
+            try { aiReaderAudio.load(); } catch (e) {}
         }
         if (aiReaderAudioUrl) {
             URL.revokeObjectURL(aiReaderAudioUrl);
@@ -4875,11 +4877,10 @@ function aiReaderSpeakRemote(clean, token, fromUserGesture) {
 
             const url = URL.createObjectURL(blob);
             aiReaderAudioUrl = url;
-            const audio = new Audio(url);
-            aiReaderAudio = audio;
+            if (!aiReaderAudio) aiReaderAudio = document.createElement("audio");
+            aiReaderAudio.src = url;
 
             const cleanup = function() {
-                if (aiReaderAudio === audio) aiReaderAudio = null;
                 if (aiReaderAudioUrl === url) {
                     URL.revokeObjectURL(url);
                     aiReaderAudioUrl = "";
@@ -4887,10 +4888,10 @@ function aiReaderSpeakRemote(clean, token, fromUserGesture) {
                 if (token === aiReaderSpeechToken) aiReaderSpeaking = false;
             };
 
-            audio.onended = cleanup;
-            audio.onerror = cleanup;
+            aiReaderAudio.onended = cleanup;
+            aiReaderAudio.onerror = cleanup;
 
-            const playPromise = audio.play();
+            const playPromise = aiReaderAudio.play();
             if (playPromise && typeof playPromise.catch === "function") {
                 playPromise.catch(function(error) {
                     cleanup();
@@ -5193,6 +5194,10 @@ function aiReaderInit() {
                     aiReaderLoadVoice
                 );
             }
+        }
+
+        if (!aiReaderAudio) {
+            aiReaderAudio = document.createElement("audio");
         }
 
         /*
