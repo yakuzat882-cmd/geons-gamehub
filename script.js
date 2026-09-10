@@ -4667,6 +4667,7 @@ let aiReaderSpeechToken = 0;
 let aiReaderReadTimer = null;
 let aiReaderVoice = null;
 let aiReaderUserActivated = false;
+let aiReaderAudioUnlocked = false;
 let aiReaderAudio = null;
 let aiReaderAudioUrl = "";
 const AI_READER_TTS_ENDPOINT = "https://geon-ai-reader.yakuzat882.workers.dev";
@@ -4827,11 +4828,36 @@ function aiReaderStop() {
         console.warn("AI Reader stop failed:", error);
     }
 
+    try {
+        if (aiReaderAudio) {
+            try { aiReaderAudio.pause(); } catch (e) {}
+            try { aiReaderAudio.currentTime = 0; } catch (e) {}
+            aiReaderAudio = null;
+        }
+    } catch (error) {
+        console.warn("AI Reader remote audio stop failed:", error);
+    }
+
     aiReaderSpeaking = false;
 }
 
 function aiReaderSpeakRemote(clean, token, fromUserGesture) {
-    if (!fromUserGesture || !aiReaderUserActivated) return false;
+    if (!aiReaderUserActivated) return false;
+    if (!fromUserGesture && !aiReaderAudioUnlocked) return false;
+
+    try {
+        if (aiReaderAudio) {
+            try { aiReaderAudio.pause(); } catch (e) {}
+            try { aiReaderAudio.currentTime = 0; } catch (e) {}
+            aiReaderAudio = null;
+        }
+        if (aiReaderAudioUrl) {
+            URL.revokeObjectURL(aiReaderAudioUrl);
+            aiReaderAudioUrl = "";
+        }
+    } catch (e) {
+        console.warn("AI Reader remote audio pre-cleanup failed:", e);
+    }
 
     aiReaderSpeaking = true;
 
@@ -5190,6 +5216,29 @@ function aiReaderInit() {
             passive: true
         });
 
+        /*
+         * Smallest safe mobile audio unlock: try to play a very quiet
+         * existing sound on first real interaction so that subsequent
+         * asynchronous remote TTS audio.play() is permitted.
+         */
+        const aiReaderUnlockAudio = () => {
+            if (aiReaderAudioUnlocked) return;
+            try {
+                const a = document.createElement("audio");
+                a.src = "click.mp3";
+                a.volume = 0.001;
+                const p = a.play();
+                if (p && typeof p.then === "function") {
+                    p.then(function () { aiReaderAudioUnlocked = true; if (aiReaderIsEnabled && aiReaderIsEnabled()) aiReaderRefresh(); }).catch(function () {});
+                } else {
+                    aiReaderAudioUnlocked = true;
+                }
+            } catch (e) {
+                // unlock may fail on some contexts; retry on next interaction
+            }
+        };
+        document.addEventListener("pointerdown", aiReaderUnlockAudio, { passive: true });
+
         if (
             aiReaderSupported() &&
             typeof MutationObserver !== "undefined"
@@ -5340,6 +5389,14 @@ function toggleAIReader() {
          * allowed to start subsequent speech on supported screens.
          */
         aiReaderUserActivated = true;
+
+        // Smallest safe unlock on the settings button gesture itself
+        try {
+            const unlockAudio = document.createElement("audio");
+            unlockAudio.src = "click.mp3";
+            unlockAudio.volume = 0.001;
+            unlockAudio.play();
+        } catch (e) {}
 
         aiReaderStop();
         aiReaderLastScreenKey = "";
