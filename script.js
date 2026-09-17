@@ -4654,7 +4654,9 @@ function updateAchievementCompletion() {
 
 /* =====================================
    AI READER — MOBILE-SAFE ACCESSIBILITY FEATURE
-   Native Web Speech API.
+   Final repair: persistent audio element, real unlock,
+   Cloudflare TTS primary with native fallback,
+   manual Story Reader, stale-request cleanup.
    Supports Motto, Welcome, Quiz, Story and Mission.
 ===================================== */
 
@@ -4670,7 +4672,9 @@ let aiReaderUserActivated = false;
 let aiReaderAudioUnlocked = false;
 let aiReaderAudio = null;
 let aiReaderAudioUrl = "";
+let aiReaderFetchController = null;
 const AI_READER_TTS_ENDPOINT = "https://geon-ai-reader.yakuzat882.workers.dev";
+const AI_READER_SILENT_WAV = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==";
 
 function aiReaderSupported() {
     try {
@@ -4688,23 +4692,19 @@ function aiReaderSupported() {
 
 function aiReaderLoadVoice() {
     if (!aiReaderSupported()) return null;
-
     try {
         const voices = window.speechSynthesis.getVoices();
         if (!voices || !voices.length) return null;
-
         const preferred = voices.find(v =>
             /^en(-|_)/i.test(v.lang || "") &&
             /google|microsoft|samantha|daniel|alex|enhanced/i.test(v.name || "")
         );
-
         aiReaderVoice =
             preferred ||
             voices.find(v => /^en(-|_)/i.test(v.lang || "")) ||
             voices.find(v => /^fil(-|_)/i.test(v.lang || "")) ||
             voices[0] ||
             null;
-
         return aiReaderVoice;
     } catch (error) {
         console.warn("AI Reader voice detection failed:", error);
@@ -4716,20 +4716,45 @@ function aiReaderIsEnabled() {
     return Boolean(settingsData.aiReader);
 }
 
+function aiReaderEnsureAudioElement() {
+    try {
+        if (aiReaderAudio && document.body.contains(aiReaderAudio)) return aiReaderAudio;
+        let existing = document.getElementById("aiReaderAudio");
+        if (existing) {
+            aiReaderAudio = existing;
+        } else {
+            aiReaderAudio = document.createElement("audio");
+            aiReaderAudio.id = "aiReaderAudio";
+        }
+        aiReaderAudio.preload = "auto";
+        aiReaderAudio.setAttribute("playsinline", "");
+        aiReaderAudio.setAttribute("webkit-playsinline", "");
+        aiReaderAudio.style.display = "none";
+        aiReaderAudio.style.position = "absolute";
+        aiReaderAudio.style.width = "1px";
+        aiReaderAudio.style.height = "1px";
+        aiReaderAudio.style.overflow = "hidden";
+        if (!document.body.contains(aiReaderAudio)) {
+            document.body.appendChild(aiReaderAudio);
+        }
+        return aiReaderAudio;
+    } catch (error) {
+        console.warn("AI Reader audio element init failed:", error);
+        return aiReaderAudio;
+    }
+}
+
 function aiReaderActiveIntroStep() {
     const intro = document.getElementById("introFlow");
     if (!intro || !aiReaderVisible(intro)) return null;
-
     const active = intro.querySelector(".intro-step.active");
     if (!active || !aiReaderVisible(active)) return null;
-
     const step = Number(active.dataset.step);
     return step === 2 || step === 3 ? active : null;
 }
 
 function aiReaderVisible(el) {
     if (!el) return false;
-
     try {
         const style = window.getComputedStyle(el);
         return !el.hidden &&
@@ -4745,13 +4770,11 @@ function aiReaderVisible(el) {
 
 function aiReaderText(el) {
     if (!el) return "";
-
     try {
         const clone = el.cloneNode(true);
         clone.querySelectorAll(
             "[aria-hidden='true'], script, style, noscript, button"
         ).forEach(n => n.remove());
-
         return (clone.innerText || clone.textContent || "")
             .replace(/\s+/g, " ")
             .trim();
@@ -4764,7 +4787,6 @@ function aiReaderText(el) {
 function aiReaderCurrentScreen() {
     try {
         const intro = aiReaderActiveIntroStep();
-
         if (intro) {
             const step = Number(intro.dataset.step);
             return {
@@ -4773,11 +4795,9 @@ function aiReaderCurrentScreen() {
                 type: step === 2 ? "motto" : "welcome"
             };
         }
-
         const achievement = document.getElementById("achievementScreen");
         const victory = document.getElementById("victoryScreen");
         const gameOver = document.getElementById("gameOverScreen");
-
         if (
             (achievement && aiReaderVisible(achievement)) ||
             (victory && aiReaderVisible(victory)) ||
@@ -4785,22 +4805,18 @@ function aiReaderCurrentScreen() {
         ) {
             return null;
         }
-
         const missionPanel = document.getElementById("missionPanel");
         if (missionPanel && aiReaderVisible(missionPanel)) {
             return { key: "your-mission", el: missionPanel, type: "mission" };
         }
-
         const storyReader = document.getElementById("storyReaderPanel");
         if (storyReader && aiReaderVisible(storyReader)) {
             return { key: "story-reader", el: storyReader, type: "story-reader" };
         }
-
         const storyQuestion = document.getElementById("storyQuestionPanel");
         if (storyQuestion && aiReaderVisible(storyQuestion)) {
             return { key: "story-question", el: storyQuestion, type: "story-question" };
         }
-
         const quiz = document.getElementById("quizScreen");
         if (quiz && aiReaderVisible(quiz)) {
             return { key: "quiz", el: quiz, type: "quiz" };
@@ -4808,18 +4824,19 @@ function aiReaderCurrentScreen() {
     } catch (error) {
         console.warn("AI Reader screen detection failed:", error);
     }
-
     return null;
 }
 
 function aiReaderStop() {
     ++aiReaderSpeechToken;
-
     if (aiReaderReadTimer) {
         clearTimeout(aiReaderReadTimer);
         aiReaderReadTimer = null;
     }
-
+    if (aiReaderFetchController) {
+        try { aiReaderFetchController.abort(); } catch (e) {}
+        aiReaderFetchController = null;
+    }
     try {
         if (aiReaderSupported()) {
             window.speechSynthesis.cancel();
@@ -4827,81 +4844,150 @@ function aiReaderStop() {
     } catch (error) {
         console.warn("AI Reader stop failed:", error);
     }
-
     try {
-        if (aiReaderAudio) {
-            try { aiReaderAudio.pause(); } catch (e) {}
-            try { aiReaderAudio.currentTime = 0; } catch (e) {}
-            try { aiReaderAudio.src = ""; } catch (e) {}
-            try { aiReaderAudio.load(); } catch (e) {}
+        const audio = aiReaderAudio || document.getElementById("aiReaderAudio");
+        if (audio) {
+            try { audio.pause(); } catch (e) {}
+            try { audio.currentTime = 0; } catch (e) {}
+            try { audio.removeAttribute("src"); } catch (e) {}
+            try { audio.load(); } catch (e) {}
+            audio.onended = null;
+            audio.onerror = null;
+        }
+        if (aiReaderAudioUrl) {
+            try { URL.revokeObjectURL(aiReaderAudioUrl); } catch (e) {}
+            aiReaderAudioUrl = "";
         }
     } catch (error) {
         console.warn("AI Reader remote audio stop failed:", error);
     }
-
     aiReaderSpeaking = false;
 }
 
-function aiReaderSpeakRemote(clean, token, fromUserGesture) {
-    if (!aiReaderUserActivated) return false;
-    if (!fromUserGesture && !aiReaderAudioUnlocked) return false;
-
+function aiReaderSpeakNative(clean, token) {
     try {
-        if (aiReaderAudio) {
-            try { aiReaderAudio.pause(); } catch (e) {}
-            try { aiReaderAudio.currentTime = 0; } catch (e) {}
-            try { aiReaderAudio.src = ""; } catch (e) {}
-            try { aiReaderAudio.load(); } catch (e) {}
+        if (!aiReaderSupported()) return false;
+        const synthesis = window.speechSynthesis;
+        if (!synthesis || typeof synthesis.speak !== "function") return false;
+        const utterance = new SpeechSynthesisUtterance(clean);
+        const voice = aiReaderVoice || aiReaderLoadVoice();
+        if (voice) {
+            utterance.voice = voice;
+            if (voice.lang) utterance.lang = voice.lang;
+        } else {
+            utterance.lang = navigator.language || "en-US";
         }
+        utterance.rate = 0.9;
+        utterance.pitch = 1;
+        utterance.volume = 1;
+        utterance.onstart = function () {
+            if (token === aiReaderSpeechToken) {
+                aiReaderSpeaking = true;
+            }
+        };
+        utterance.onend = function () {
+            if (token === aiReaderSpeechToken) {
+                aiReaderSpeaking = false;
+            }
+        };
+        utterance.onerror = function (error) {
+            if (token === aiReaderSpeechToken) {
+                aiReaderSpeaking = false;
+            }
+            console.warn("AI Reader native speech error:", error);
+        };
+        synthesis.speak(utterance);
+        return true;
+    } catch (error) {
+        aiReaderSpeaking = false;
+        console.warn("AI Reader native speak failed:", error);
+        return false;
+    }
+}
+
+function aiReaderSpeakRemote(clean, token, fromUserGesture, controller) {
+    if (!aiReaderUserActivated) return false;
+    if (!fromUserGesture && !aiReaderAudioUnlocked) {
+        // If native is available, we can still allow native fallback via caller,
+        // but remote itself requires unlock for auto path
+        return false;
+    }
+    const audio = aiReaderEnsureAudioElement();
+    if (!audio) {
+        if (aiReaderSupported()) return aiReaderSpeakNative(clean, token);
+        return false;
+    }
+    try {
         if (aiReaderAudioUrl) {
             URL.revokeObjectURL(aiReaderAudioUrl);
             aiReaderAudioUrl = "";
         }
     } catch (e) {
-        console.warn("AI Reader remote audio pre-cleanup failed:", e);
+        console.warn("AI Reader remote pre-cleanup failed:", e);
     }
 
     aiReaderSpeaking = true;
 
     fetch(AI_READER_TTS_ENDPOINT, {
         method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({text: clean})
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: clean }),
+        signal: controller ? controller.signal : undefined
     })
-        .then(function(response) {
+        .then(function (response) {
+            if (token !== aiReaderSpeechToken) throw new Error("stale");
             if (!response.ok) throw new Error("TTS HTTP " + response.status);
             return response.blob();
         })
-        .then(function(blob) {
+        .then(function (blob) {
             if (token !== aiReaderSpeechToken) return;
-
             const url = URL.createObjectURL(blob);
             aiReaderAudioUrl = url;
-            if (!aiReaderAudio) aiReaderAudio = document.createElement("audio");
-            aiReaderAudio.src = url;
+            const el = aiReaderEnsureAudioElement();
+            if (!el) throw new Error("audio element missing");
+            el.src = url;
+            el.volume = 1;
+            el.muted = false;
 
-            const cleanup = function() {
+            const cleanup = function () {
                 if (aiReaderAudioUrl === url) {
-                    URL.revokeObjectURL(url);
+                    try { URL.revokeObjectURL(url); } catch (e) {}
                     aiReaderAudioUrl = "";
                 }
                 if (token === aiReaderSpeechToken) aiReaderSpeaking = false;
             };
 
-            aiReaderAudio.onended = cleanup;
-            aiReaderAudio.onerror = cleanup;
+            el.onended = cleanup;
+            el.onerror = function () {
+                cleanup();
+                console.warn("AI Reader remote audio error, falling back to native");
+                if (token === aiReaderSpeechToken && aiReaderSupported()) {
+                    aiReaderSpeakNative(clean, token);
+                }
+            };
 
-            const playPromise = aiReaderAudio.play();
+            const playPromise = el.play();
             if (playPromise && typeof playPromise.catch === "function") {
-                playPromise.catch(function(error) {
+                playPromise.catch(function (error) {
                     cleanup();
                     console.warn("AI Reader remote audio play failed:", error);
+                    if (error && error.name === "NotAllowedError") {
+                        aiReaderAudioUnlocked = false;
+                    }
+                    if (token === aiReaderSpeechToken && aiReaderSupported()) {
+                        aiReaderSpeakNative(clean, token);
+                    }
                 });
             }
         })
-        .catch(function(error) {
-            if (token === aiReaderSpeechToken) aiReaderSpeaking = false;
+        .catch(function (error) {
+            if (error && error.name === "AbortError") return;
+            if (token !== aiReaderSpeechToken) return;
+            aiReaderSpeaking = false;
             console.warn("AI Reader remote TTS failed:", error);
+            if (aiReaderSupported()) {
+                aiReaderSpeakNative(clean, token);
+            }
         });
 
     return true;
@@ -4910,66 +4996,42 @@ function aiReaderSpeakRemote(clean, token, fromUserGesture) {
 function aiReaderSpeak(text, fromUserGesture = false) {
     try {
         if (!aiReaderIsEnabled()) return false;
-
         const clean = String(text || "")
             .replace(/\s+/g, " ")
             .trim();
-
         if (!clean) return false;
-
         if (fromUserGesture) {
             aiReaderUserActivated = true;
         }
-
         const screen = aiReaderCurrentScreen();
         if (!screen) return false;
 
-        const synthesis = window.speechSynthesis;
-
         aiReaderStop();
-
         const token = ++aiReaderSpeechToken;
+        const controller = new AbortController();
+        aiReaderFetchController = controller;
 
-        if (!synthesis || typeof synthesis.speak !== "function") {
-            return aiReaderSpeakRemote(clean, token, fromUserGesture);
-        }
-        const utterance = new SpeechSynthesisUtterance(clean);
+        const canUseRemote = aiReaderUserActivated && (fromUserGesture || aiReaderAudioUnlocked);
 
-        const voice = aiReaderVoice || aiReaderLoadVoice();
-
-        if (voice) {
-            utterance.voice = voice;
-            if (voice.lang) utterance.lang = voice.lang;
-        } else {
-            utterance.lang = navigator.language || "en-US";
+        if (canUseRemote) {
+            // Remote is primary; it will fallback to native on failure
+            return aiReaderSpeakRemote(clean, token, fromUserGesture, controller);
         }
 
-        utterance.rate = 0.9;
-        utterance.pitch = 1;
-        utterance.volume = 1;
+        // Remote not possible yet: try native if available
+        if (aiReaderSupported()) {
+            return aiReaderSpeakNative(clean, token);
+        }
 
-        utterance.onstart = function () {
-            if (token === aiReaderSpeechToken) {
-                aiReaderSpeaking = true;
+        // If gesture but still not unlocked, attempt unlock then try native as immediate feedback
+        if (fromUserGesture) {
+            aiReaderUnlockAudio();
+            if (aiReaderSupported()) {
+                return aiReaderSpeakNative(clean, token);
             }
-        };
+        }
 
-        utterance.onend = function () {
-            if (token === aiReaderSpeechToken) {
-                aiReaderSpeaking = false;
-            }
-        };
-
-        utterance.onerror = function (error) {
-            if (token === aiReaderSpeechToken) {
-                aiReaderSpeaking = false;
-            }
-            console.warn("AI Reader speech error:", error);
-        };
-
-        synthesis.speak(utterance);
-
-        return true;
+        return false;
     } catch (error) {
         aiReaderSpeaking = false;
         console.warn("AI Reader speak failed:", error);
@@ -4980,16 +5042,12 @@ function aiReaderSpeak(text, fromUserGesture = false) {
 function aiReaderReadVisibleScreenFromUserGesture() {
     try {
         if (!aiReaderIsEnabled()) return false;
-
         const screen = aiReaderCurrentScreen();
         if (!screen) return false;
-
         aiReaderLastScreenKey = "";
         aiReaderLastQuizKey = "";
-
         const text = aiReaderBuildCurrentScreenText(screen);
         if (!text) return false;
-
         return aiReaderSpeak(text, true);
     } catch (error) {
         console.warn("AI Reader manual read failed:", error);
@@ -5001,36 +5059,25 @@ window.aiReaderReadVisibleScreenFromUserGesture = aiReaderReadVisibleScreenFromU
 
 function aiReaderBuildCurrentScreenText(screen) {
     if (!screen) return "";
-
     if (screen.type === "mission") {
         const story = document.getElementById("missionStoryText");
         const question = document.getElementById("missionQuestionText");
-
         return [
             story ? aiReaderText(story) : "",
             question ? aiReaderText(question) : ""
         ].filter(Boolean).join(". ");
     }
-
     if (screen.type === "story-reader") {
         const storyText = document.getElementById("storyReaderText");
         return storyText ? aiReaderText(storyText) : "";
     }
-
     if (screen.type === "story-question") {
         const question = document.getElementById("storyQuestionText");
         const questionText = question ? aiReaderText(question) : "";
-
         const number = document.getElementById("storyQuestionNumber");
-        const questionNumber = number
-            ? String(number.textContent || "").trim()
-            : "";
-
-        return questionNumber
-            ? `Question ${questionNumber}. ${questionText}`
-            : questionText;
+        const questionNumber = number ? String(number.textContent || "").trim() : "";
+        return questionNumber ? `Question ${questionNumber}. ${questionText}` : questionText;
     }
-
     if (screen.type === "quiz") {
         const question = document.getElementById("quizQuestionText");
         const questionText = question
@@ -5038,34 +5085,27 @@ function aiReaderBuildCurrentScreenText(screen) {
                 .replace(/\s+/g, " ")
                 .trim()
             : "";
-
         if (!questionText) return "";
-
         return `Question ${quizState.index + 1}. ${questionText}`;
     }
-
     if (screen.type === "motto") {
         const title = screen.el.querySelector("h2");
         const motto = screen.el.querySelector(".motto-copy");
         const author = screen.el.querySelector(".motto-author");
-
         return [
             title ? aiReaderText(title) : "",
             motto ? aiReaderText(motto) : "",
             author ? aiReaderText(author) : ""
         ].filter(Boolean).join(". ");
     }
-
     if (screen.type === "welcome") {
         const title = screen.el.querySelector(".welcome-title");
         const content = screen.el.querySelector(".welcome-copy");
-
         return [
             title ? aiReaderText(title) : "",
             content ? aiReaderText(content) : ""
         ].filter(Boolean).join(". ");
     }
-
     return "";
 }
 
@@ -5075,50 +5115,48 @@ function aiReaderReadCurrentScreen(force = false) {
             aiReaderStop();
             return;
         }
-
         const screen = aiReaderCurrentScreen();
-
         if (!screen || !aiReaderVisible(screen.el)) {
             aiReaderStop();
             aiReaderLastScreenKey = "";
             aiReaderLastQuizKey = "";
             return;
         }
-
+        // Story Reader is manual-only: do not auto-read
+        if (screen.type === "story-reader") {
+            return;
+        }
         const text = aiReaderBuildCurrentScreenText(screen);
         if (!text) return;
-
         let contentKey = screen.key + ":" + text;
-
         if (screen.type === "quiz") {
-            contentKey += ":" +
-                quizState.index + ":" +
-                quizState.subject + ":" +
-                quizState.quizType;
+            contentKey += ":" + quizState.index + ":" + quizState.subject + ":" + quizState.quizType;
         }
-
+        if (screen.type === "mission") {
+            contentKey += ":" + (document.getElementById("missionProgress")?.textContent || "");
+        }
+        if (screen.type === "story-question") {
+            contentKey += ":" + (document.getElementById("storyQuestionNumber")?.textContent || "");
+        }
         if (!force && contentKey === aiReaderLastQuizKey) return;
-
         aiReaderLastQuizKey = contentKey;
         aiReaderLastScreenKey = screen.key;
-
         aiReaderStop();
-
-        /*
-         * Automatic speech is allowed only after the browser has seen
-         * a user interaction. This prevents mobile autoplay restrictions
-         * from silently blocking the reader.
-         */
         if (!aiReaderUserActivated) return;
-
+        // Auto path requires either remote unlocked or native available
+        if (!aiReaderAudioUnlocked && !aiReaderSupported()) return;
+        if (!aiReaderAudioUnlocked && aiReaderSupported()) {
+            // Allow native auto-read even if remote not yet unlocked
+        } else if (!aiReaderAudioUnlocked) {
+            return;
+        }
         aiReaderReadTimer = setTimeout(() => {
             aiReaderReadTimer = null;
-
             const current = aiReaderCurrentScreen();
             if (!current || current.key !== screen.key) return;
-
+            if (contentKey !== aiReaderLastQuizKey) return;
             aiReaderSpeak(text);
-        }, 120);
+        }, 160);
     } catch (error) {
         console.warn("AI Reader read failed:", error);
     }
@@ -5127,10 +5165,8 @@ function aiReaderReadCurrentScreen(force = false) {
 function aiReaderStoryFeedback(text) {
     try {
         if (!aiReaderIsEnabled()) return;
-
         const screen = aiReaderCurrentScreen();
         if (!screen || screen.type !== "story-question") return;
-
         aiReaderSpeak(String(text || "").trim(), true);
     } catch (error) {
         console.warn("AI Reader feedback error:", error);
@@ -5143,124 +5179,108 @@ function aiReaderRefresh(force = false) {
             aiReaderStop();
             return;
         }
-
         const screen = aiReaderCurrentScreen();
-
         if (!screen) {
             aiReaderStop();
             aiReaderLastScreenKey = "";
             aiReaderLastQuizKey = "";
             return;
         }
-
         aiReaderReadCurrentScreen(force);
     } catch (error) {
         console.warn("AI Reader refresh failed:", error);
     }
 }
 
+function aiReaderUnlockAudio() {
+    if (aiReaderAudioUnlocked) return true;
+    try {
+        const audio = aiReaderEnsureAudioElement();
+        if (!audio) return false;
+        audio.src = AI_READER_SILENT_WAV;
+        audio.volume = 0.001;
+        audio.muted = false;
+        const playPromise = audio.play();
+        if (playPromise && typeof playPromise.then === "function") {
+            playPromise.then(() => {
+                aiReaderAudioUnlocked = true;
+                try { audio.pause(); } catch (e) {}
+                try { audio.currentTime = 0; } catch (e) {}
+                try { audio.removeAttribute("src"); } catch (e) {}
+                try { audio.load(); } catch (e) {}
+                if (aiReaderIsEnabled()) aiReaderRefresh();
+            }).catch(() => {
+                // remain locked, will retry on next gesture
+            });
+        } else {
+            aiReaderAudioUnlocked = true;
+        }
+        return aiReaderAudioUnlocked;
+    } catch (e) {
+        return false;
+    }
+}
+
 function aiReaderInit() {
     try {
         if (aiReaderInitialized) return;
-
         aiReaderInitialized = true;
-
         if (aiReaderObserver) {
             aiReaderObserver.disconnect();
             aiReaderObserver = null;
         }
-
-    try {
-        if (aiReaderAudio) {
-            aiReaderAudio.pause();
-            aiReaderAudio.removeAttribute("src");
-            aiReaderAudio.load();
-            aiReaderAudio = null;
+        try {
+            const existingAudio = document.getElementById("aiReaderAudio") || aiReaderAudio;
+            if (existingAudio) {
+                try { existingAudio.pause(); } catch (e) {}
+                try { existingAudio.removeAttribute("src"); } catch (e) {}
+                try { existingAudio.load(); } catch (e) {}
+            }
+            if (aiReaderAudioUrl) {
+                try { URL.revokeObjectURL(aiReaderAudioUrl); } catch (e) {}
+                aiReaderAudioUrl = "";
+            }
+        } catch (error) {
+            console.warn("AI Reader remote audio stop failed:", error);
         }
-        if (aiReaderAudioUrl) {
-            URL.revokeObjectURL(aiReaderAudioUrl);
-            aiReaderAudioUrl = "";
-        }
-    } catch (error) {
-        console.warn("AI Reader remote audio stop failed:", error);
-    }
 
         if (aiReaderSupported()) {
             aiReaderLoadVoice();
-
             if (typeof window.speechSynthesis.addEventListener === "function") {
-                window.speechSynthesis.addEventListener(
-                    "voiceschanged",
-                    aiReaderLoadVoice
-                );
+                window.speechSynthesis.addEventListener("voiceschanged", aiReaderLoadVoice);
+            } else if (window.speechSynthesis && typeof window.speechSynthesis.onvoiceschanged !== "undefined") {
+                window.speechSynthesis.onvoiceschanged = aiReaderLoadVoice;
             }
         }
 
-        if (!aiReaderAudio) {
-            aiReaderAudio = document.createElement("audio");
-        }
+        aiReaderEnsureAudioElement();
 
-        /*
-         * Any real tap/click activates the reader for subsequent
-         * automatic screen reading. The actual speech can still be
-         * started manually through the reader control.
-         */
         const activateReader = () => {
             aiReaderUserActivated = true;
-
             if (aiReaderIsEnabled()) {
                 aiReaderRefresh();
             }
         };
+        document.addEventListener("pointerdown", activateReader, { passive: true });
+        document.addEventListener("touchstart", activateReader, { passive: true });
+        document.addEventListener("keydown", activateReader, { passive: true });
+        document.addEventListener("click", activateReader, { passive: true });
 
-        document.addEventListener("pointerdown", activateReader, {
-            passive: true
-        });
-
-        document.addEventListener("keydown", activateReader, {
-            passive: true
-        });
-
-        /*
-         * Smallest safe mobile audio unlock: try to play a very quiet
-         * existing sound on first real interaction so that subsequent
-         * asynchronous remote TTS audio.play() is permitted.
-         */
-        const aiReaderUnlockAudio = () => {
-            if (aiReaderAudioUnlocked) return;
-            try {
-                if (!aiReaderAudio) aiReaderAudio = document.createElement("audio");
-                aiReaderAudio.src = "data:audio/wav;base64,UklGRsAIAABXQVZFZm10IBAAAAABAAEAIlYAAESsAAACABAAZGF0YZwIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==";
-                aiReaderAudio.volume = 0.001;
-                const p = aiReaderAudio.play();
-                if (p && typeof p.then === "function") {
-                    p.then(function () { aiReaderAudioUnlocked = true; if (aiReaderIsEnabled && aiReaderIsEnabled()) aiReaderRefresh(); }).catch(function () {});
-                } else {
-                    aiReaderAudioUnlocked = true;
-                }
-            } catch (e) {
-                // unlock may fail on some contexts; retry on next interaction
-            }
+        const unlockHandler = () => {
+            if (!aiReaderAudioUnlocked) aiReaderUnlockAudio();
         };
-        document.addEventListener("pointerdown", aiReaderUnlockAudio, { passive: true });
+        document.addEventListener("pointerdown", unlockHandler, { passive: true });
+        document.addEventListener("touchstart", unlockHandler, { passive: true });
+        document.addEventListener("click", unlockHandler, { passive: true });
 
-        if (
-            aiReaderSupported() &&
-            typeof MutationObserver !== "undefined"
-        ) {
+        if (aiReaderSupported() && typeof MutationObserver !== "undefined") {
             aiReaderObserver = new MutationObserver(function (mutations) {
                 const relevant = mutations.some(m =>
                     m.type === "attributes" &&
-                    (
-                        m.attributeName === "class" ||
-                        m.attributeName === "aria-hidden" ||
-                        m.attributeName === "hidden"
-                    )
+                    (m.attributeName === "class" || m.attributeName === "aria-hidden" || m.attributeName === "hidden")
                 );
-
                 if (relevant) aiReaderRefresh();
             });
-
             aiReaderObserver.observe(document.body, {
                 subtree: true,
                 attributes: true,
@@ -5274,6 +5294,8 @@ function aiReaderInit() {
     }
 }
 
+/* =====================================
+   MUSIC TOGGLE
 /* =====================================
    MUSIC TOGGLE
 ===================================== */
@@ -5390,18 +5412,12 @@ function toggleAIReader() {
     } else {
         /*
          * The Settings button itself is a real user gesture.
-         * Mark the reader as activated so mobile browsers are
-         * allowed to start subsequent speech on supported screens.
+         * Mark the reader as activated and unlock the persistent
+         * audio element so subsequent async TTS play() is allowed.
          */
         aiReaderUserActivated = true;
-
-        // Smallest safe unlock on the settings button gesture itself
-        try {
-            const unlockAudio = document.createElement("audio");
-            unlockAudio.src = "data:audio/wav;base64,UklGRsAIAABXQVZFZm10IBAAAAABAAEAIlYAAESsAAACABAAZGF0YZwIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==";
-            unlockAudio.volume = 0.001;
-            unlockAudio.play();
-        } catch (e) {}
+        aiReaderEnsureAudioElement();
+        aiReaderUnlockAudio();
 
         aiReaderStop();
         aiReaderLastScreenKey = "";
@@ -5409,10 +5425,11 @@ function toggleAIReader() {
 
         /*
          * Settings is intentionally not a readable screen.
-         * If a supported screen is already active, read it now.
+         * If a supported screen is already active (and not manual-only Story Reader),
+         * read it now using a gesture-flagged request.
          */
         const screen = aiReaderCurrentScreen();
-        if (screen) {
+        if (screen && screen.type !== "story-reader") {
             const text = aiReaderBuildCurrentScreenText(screen);
             if (text) aiReaderSpeak(text, true);
         }

@@ -1,4 +1,4 @@
-const CACHE_VERSION = "proudgeonquiz-v7-2026-09-09-ai-reader-remote";
+const CACHE_VERSION = "proudgeonquiz-v7-2026-09-17-ai-reader-final";
 const SHELL = [
   "./",
   "./index.html",
