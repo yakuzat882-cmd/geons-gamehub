@@ -30,3 +30,6 @@ pnpm-debug.log*
 # OS / temporary files
 *.tmp
 *.temp
+
+# Release archives (built artifacts, not source)
+*.zip

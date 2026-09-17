@@ -65,6 +65,50 @@ test("previous and new questioner banks are complete and isolated", () => {
   assert.equal(rows(newer).some(q => previousSignatures.has(JSON.stringify([q.question.toLowerCase(), [...q.choices].sort(), q.answer, q.category, q.subject, q.level]))), false);
 });
 
+test("previous and new banks contain no placeholder choices", () => {
+  const previous = load("questions.json");
+  const newer = load("questions.new.json");
+  const placeholder = /^\s*(option\s*\d*|choice\s*\d*|correct answer|wrong answer|placeholder|filler|xxx|n\/?a)\b/i;
+  for (const [mode, bank] of [["previous", previous], ["new", newer]]) {
+    for (const q of rows(bank)) {
+      for (const choice of q.choices) {
+        assert.equal(placeholder.test(String(choice)), false, `${mode} ${q.id} has placeholder choice ${JSON.stringify(choice)}`);
+      }
+    }
+  }
+});
+
+test("no question text is shared between previous and new banks", () => {
+  const previous = load("questions.json");
+  const newer = load("questions.new.json");
+  const norm = t => String(t || "").replace(/\s+/g, " ").trim().toLowerCase();
+  const previousTexts = new Set(rows(previous).map(q => norm(q.question)));
+  const shared = rows(newer).filter(q => previousTexts.has(norm(q.question)));
+  assert.equal(shared.length, 0, `shared question texts: ${shared.map(q => q.id).join(", ")}`);
+});
+
+test("correct answer position has no exploitable pattern", () => {
+  const previous = load("questions.json");
+  const newer = load("questions.new.json");
+  for (const [mode, bank] of [["previous", previous], ["new", newer]]) {
+    for (const subject of subjects) {
+      for (const type of quizTypes) {
+        const group = bank[subject][type];
+        const counts = { 0: 0, 1: 0, 2: 0, 3: 0 };
+        for (const q of group) counts[q.choices.indexOf(q.answer)] += 1;
+        for (const pos of Object.keys(counts)) {
+          assert.ok(counts[pos] <= 45, `${mode} ${subject}/${type}: option ${pos} holds ${counts[pos]}/80 correct answers`);
+        }
+      }
+    }
+    const bankCounts = { 0: 0, 1: 0, 2: 0, 3: 0 };
+    for (const q of rows(bank)) bankCounts[q.choices.indexOf(q.answer)] += 1;
+    for (const pos of Object.keys(bankCounts)) {
+      assert.ok(bankCounts[pos] <= 400, `${mode} bank-wide: option ${pos} holds ${bankCounts[pos]}/800 correct answers`);
+    }
+  }
+});
+
 test("embedded fallbacks expose the same isolated datasets", () => {
   const context = { window: {}, console };
   vm.createContext(context);

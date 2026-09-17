@@ -64,9 +64,12 @@ npm test
 npm run check
 npm run static-check
 npm run browser-smoke
+npm run http-smoke
+node tests/v5_validate_banks.js
+node tests/v5_flow_simulate.js
 ```
 
-`npm test` runs the pure core, structural regression, and storage import/export tests. The browser smoke test starts or uses a real HTTP origin, clears storage for a clean-start check, exercises intro-to-home and subject-to-quiz entry, tests major dialog semantics, and checks horizontal overflow at 320×568, 360×800, 375×667, 390×844, 412×915, 768×1024, 1024×768, 1280×800, and 1440×900 under ORIGINAL, LIGHT, and DARK.
+`npm test` runs the pure core, structural regression, and storage import/export tests, including the V5 questioner contract: both banks hold exactly 800 questions with levels 1–80 per subject/set, the required category distributions, unique mode-scoped IDs, no placeholder choices, no repeated answer sets, balanced answer positions, and no question text shared between PREVIOUS and NEW. The browser smoke test starts or uses a real HTTP origin, clears storage for a clean-start check, exercises intro-to-home and subject-to-quiz entry, tests major dialog semantics, and checks horizontal overflow at 320×568, 360×800, 375×667, 390×844, 412×915, 768×1024, 1024×768, 1280×800, and 1440×900 under ORIGINAL, LIGHT, and DARK. `npm run http-smoke` verifies every offline-shell asset is served and both question banks are valid over HTTP. `node tests/v5_validate_banks.js` reports detailed bank validation, and `node tests/v5_flow_simulate.js` replays the in-browser load/validate/session-build flow without a browser.
 
 ## Gameplay contracts
 
@@ -96,7 +99,7 @@ Theme state is persisted through settings and applied using `body[data-theme]`. 
 
 ## PWA and audio
 
-The versioned service worker caches the complete same-origin shell, including HTML, CSS, JavaScript, both question banks, embedded fallbacks, audio, manifest, icons, and favicon. It reports offline readiness only after all shell entries are present, caches valid JSON only, purges older cache versions, and falls back to cached `index.html` or a safe offline response when the network fails. The current release cache is `proudgeonquiz-v5-2026-08-27`. The offline status is placed after the complete game shell in normal document order so it remains visible without covering controls.
+The versioned service worker caches the complete same-origin shell, including HTML, CSS, JavaScript, both question banks, embedded fallbacks, audio, manifest, icons, and favicon. It reports offline readiness only after all shell entries are present, caches valid JSON only, purges older cache versions, and falls back to cached `index.html` or a safe offline response when the network fails. The current release cache is `proudgeonquiz-v7-2026-09-17-v5-question-banks`. The offline status is placed after the complete game shell in normal document order so it remains visible without covering controls.
 
 `AudioManager` is the single owner for screen music and sound effects. Music elements remain lazy-loaded, track changes stop previous music, missing files and autoplay rejection are non-fatal, and Settings changes synchronize immediately. AI Reader speech stops whenever its screen is left.
 

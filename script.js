@@ -2587,12 +2587,39 @@ async function loadQuestionBank() {
         if (crossModeCollisions.size) {
             console.error("[Question Validator] Previous/New ID collision detected.", [...crossModeCollisions].slice(0, 10));
         }
+
+        /*
+         * Dataset isolation: the two banks must not share question texts,
+         * so a player can never see a "NEW" question that already exists
+         * in the PREVIOUS bank (or vice versa).
+         */
+        const bankQuestionTexts = bank => {
+            if (!bank || typeof bank !== "object") return new Set();
+            const texts = new Set();
+            Object.values(bank).forEach(subject => {
+                Object.values(subject || {}).forEach(rows => {
+                    if (!Array.isArray(rows)) return;
+                    rows.forEach(q => {
+                        const text = String(q?.question || "").replace(/\s+/g, " ").trim().toLowerCase();
+                        if (text) texts.add(text);
+                    });
+                });
+            });
+            return texts;
+        };
+        const previousTexts = bankQuestionTexts(previousQuestionBank);
+        const newTexts = bankQuestionTexts(newQuestionBank);
+        const sharedQuestionTexts = [...newTexts].filter(text => previousTexts.has(text));
+        if (sharedQuestionTexts.length) {
+            console.error("[Question Validator] Previous/New question text collision detected.", sharedQuestionTexts.slice(0, 10));
+        }
         reports.forEach(([name, report]) => {
             if (!report.valid) console.error(`[Question Validator] ${name} dataset has ${report.errors.length} issue(s).`, report);
         });
         window.ProudGeonQuizQuestionValidation = {
             reports,
-            crossModeCollisions: [...crossModeCollisions]
+            crossModeCollisions: [...crossModeCollisions],
+            sharedQuestionTexts
         };
     }
 
