@@ -2598,10 +2598,62 @@ async function loadQuestionBank() {
 
     questionBank = getActiveQuestionBank();
     if (!Object.keys(questionBank || {}).length) {
-        const message = document.getElementById("dataLoadError");
-        if (message) message.classList.add("show");
-        console.error("No valid question bank is available.");
+        showQuestionerError("The question bank could not be loaded. Progress has been kept.");
     }
+}
+
+/*
+ * Safe error surface for questioner problems: reuse the existing notice element when
+ * it is present, otherwise fall back to a plain alert. Existing progress is never
+ * touched by a validation failure.
+ */
+function showQuestionerError(message) {
+    const notice = document.getElementById("dataLoadError");
+    if (notice) {
+        notice.textContent = message;
+        notice.classList.add("show");
+    } else {
+        alert(message);
+    }
+    console.warn("[Questioner]", message);
+}
+
+/*
+ * Validation before a quiz starts: count, subject/set match, level range, unique ids,
+ * answer membership and category presence for the exact pool that is about to be used.
+ * A failure stops the quiz with a safe message instead of crashing later.
+ */
+function validateQuestionerPool(subject, quizType, pool) {
+    const errors = [];
+    if (!isValidSubject(subject)) errors.push("unknown subject");
+    if (!isValidQuizType(quizType)) errors.push("unknown quiz set");
+    const rows = Array.isArray(pool) ? pool : [];
+    if (rows.length !== 80) errors.push(`expected 80 questions, found ${rows.length}`);
+    const levels = new Set();
+    const ids = new Set();
+    const validator = window.GeonGameCore;
+    rows.forEach((question, index) => {
+        const where = `${subject}/${quizType}[${index}]`;
+        const result = validator?.validateQuestion ? validator.validateQuestion(question) : { valid: true, errors: [] };
+        if (!result.valid) errors.push(`${where}: ${result.errors.join(", ")}`);
+        if (question?.subject !== subject || (question?.quizType || question?.quizPath) !== quizType) {
+            errors.push(`${where}: subject or set mismatch`);
+        }
+        if (!Array.isArray(question?.choices) || new Set(question.choices.map(String)).size !== 4) {
+            errors.push(`${where}: four distinct choices required`);
+        }
+        const level = Number(question?.level);
+        if (!Number.isInteger(level) || level < 1 || level > 80) errors.push(`${where}: invalid level`);
+        else if (levels.has(level)) errors.push(`${where}: duplicate level ${level}`);
+        else levels.add(level);
+        const id = String(question?.id || "");
+        if (!id) errors.push(`${where}: missing id`);
+        else if (ids.has(id)) errors.push(`${where}: duplicate id ${id}`);
+        else ids.add(id);
+        if (String(question?.category || "").trim() === "") errors.push(`${where}: missing category`);
+        if (String(question?.explanation || "").trim() === "") errors.push(`${where}: missing explanation`);
+    });
+    return { valid: errors.length === 0, errors };
 }
 
 function quizProgressKey(subject, quizType) {
@@ -2984,9 +3036,12 @@ function startQuizAtSelectedLevel(box, selectedLevel) {
     }
 
     const source = getSubjectQuestionPool(subject, quizType);
+    const poolReport = validateQuestionerPool(subject, quizType, source);
 
-    if (source.length < 80) {
-        alert("The question bank for this quiz is not available.");
+    if (!poolReport.valid) {
+        showQuestionerError(
+            `This quiz could not start because its questions failed validation (${poolReport.errors.length} issue(s)). Your progress is unchanged.`
+        );
         return;
     }
 

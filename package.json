@@ -5,7 +5,9 @@
   "scripts": {
     "test": "node --test tests/*.test.js",
     "check": "node --check script.js",
+    "questioner-build": "node tools/qbank/build.js",
     "browser-smoke": "python3 tests/browser_smoke.py",
-    "static-check": "python3 tests/static_check.py"
+    "static-check": "python3 tests/static_check.py",
+    "web-check": "node tools/web_check.js"
   }
 }

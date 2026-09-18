@@ -68,6 +68,20 @@ npm run browser-smoke
 
 `npm test` runs the pure core, structural regression, and storage import/export tests. The browser smoke test starts or uses a real HTTP origin, clears storage for a clean-start check, exercises intro-to-home and subject-to-quiz entry, tests major dialog semantics, and checks horizontal overflow at 320×568, 360×800, 375×667, 390×844, 412×915, 768×1024, 1024×768, 1280×800, and 1440×900 under ORIGINAL, LIGHT, and DARK.
 
+## Question banks
+
+Both questioner modes ship a complete, isolated bank: `questions.json` (PREVIOUS QUESTIONER) and `questions.new.json` (NEW QUESTIONER), with `questions.embedded.js` / `questions.new.embedded.js` as the offline fallbacks for `window.questionBank` and `window.newQuestionBank`.
+
+Each bank holds 800 questions: five subjects x two quiz sets x levels 1–80, with exactly one question per level in every subject/set. Levels follow the difficulty bands NORMAL (1–20), HARD (21–40), INSANE (41–60) and IMPOSSIBLE (61–80), and each subject/set keeps its required category distribution. The two banks share no question text, no answer set and no question id, and progress, used-question history, titles and daily challenges stay separated by the existing questioner setting.
+
+The banks are generated and verified by `tools/qbank`:
+
+```bash
+node tools/qbank/build.js
+```
+
+The build writes both JSON banks and both embedded fallbacks, then re-checks counts, levels, categories, ids, duplicate questions, answer membership, answer-position balance and answer-length clues before the files are accepted. `tests/question_quality.test.js` runs the same verifier against the shipped data.
+
 ## Gameplay contracts
 
 The five subjects are `MATH`, `SCIENCE`, `PSYCHOLOGY`, `TECH 1`, and `TECH 2`. Each has `SUBJECT 1` and `SUBJECT 2`, with levels 1–80. Normal gameplay preserves the real timer, four answer choices, eight Lives, Score, Coins, Points, question randomization, explanations, item bar, answer locking, progression, Game Over, Victory, title milestones, achievements, and save behavior.
@@ -96,7 +110,7 @@ Theme state is persisted through settings and applied using `body[data-theme]`. 
 
 ## PWA and audio
 
-The versioned service worker caches the complete same-origin shell, including HTML, CSS, JavaScript, both question banks, embedded fallbacks, audio, manifest, icons, and favicon. It reports offline readiness only after all shell entries are present, caches valid JSON only, purges older cache versions, and falls back to cached `index.html` or a safe offline response when the network fails. The current release cache is `proudgeonquiz-v5-2026-08-27`. The offline status is placed after the complete game shell in normal document order so it remains visible without covering controls.
+The versioned service worker caches the complete same-origin shell, including HTML, CSS, JavaScript, both question banks, embedded fallbacks, audio, manifest, icons, and favicon. It reports offline readiness only after all shell entries are present, caches valid JSON only, purges older cache versions, and falls back to cached `index.html` or a safe offline response when the network fails. The current release cache is `proudgeonquiz-v7-2026-09-18-questioner-banks-v5`. The offline status is placed after the complete game shell in normal document order so it remains visible without covering controls.
 
 `AudioManager` is the single owner for screen music and sound effects. Music elements remain lazy-loaded, track changes stop previous music, missing files and autoplay rejection are non-fatal, and Settings changes synchronize immediately. AI Reader speech stops whenever its screen is left.
 
