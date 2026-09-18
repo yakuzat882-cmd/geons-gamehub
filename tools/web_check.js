@@ -216,6 +216,31 @@ async function run(origin, server) {
   check("every difficulty band is playable in both modes", bandsClean,
     bandPlayed.map(entry => `${entry.mode[0]}:${entry.band[0]}@L${entry.level}${entry.answered ? "" : "(failed)"}`).join(" "));
 
+  /* Each of the five subjects is playable through the UI in both modes. */
+  const subjectPlayed = [];
+  for (const mode of ["previous", "new"]) {
+    window.setQuestioner(mode);
+    for (const subject of SUBJECTS) {
+      window.openSubjectSelection(subject);
+      window.openLevelSelection("A");
+      window.startQuizAtSelectedLevel("A", 3);
+      await wait(160);
+      const text = document_getText(window, "quizQuestionText");
+      const bank = sample[mode];
+      const question = bank[subject]["SUBJECT 1"].find(entry => entry.question === text);
+      const target = [...window.document.querySelectorAll(".quiz-answer")].find(button => button.dataset.answer === question?.answer);
+      if (target) target.click();
+      await wait(160);
+      subjectPlayed.push({ mode, subject, answered: Boolean(question) && Boolean(target) });
+      const next = window.document.getElementById("quizNextButton");
+      if (next) next.click();
+      await wait(160);
+    }
+  }
+  check("all five subjects are playable in both modes",
+    subjectPlayed.every(entry => entry.answered),
+    subjectPlayed.filter(entry => entry.mode === "previous").map(entry => entry.subject).join(", "));
+
   check("no JavaScript console errors from the questioner", problems.length === 0,
     problems.slice(0, 3).join(" | ") || "clean");
 
