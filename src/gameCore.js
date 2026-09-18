@@ -160,6 +160,8 @@
     };
   }
 
+  const PLACEHOLDER_CHOICE = /^Option \d+$/i;
+
   function validateQuestion(question) {
     const q = question && typeof question === "object" ? question : {};
     const errors = [];
@@ -172,6 +174,10 @@
     if (typeof q.question !== "string" || !q.question.trim()) errors.push("empty question");
     if (!Array.isArray(q.choices) || q.choices.length < 2) errors.push("invalid choices");
     if (Array.isArray(q.choices) && !q.choices.includes(q.answer)) errors.push("answer not in choices");
+    if (Array.isArray(q.choices) && q.choices.some(choice => PLACEHOLDER_CHOICE.test(String(choice)))) {
+      errors.push("placeholder choice");
+    }
+    if (typeof q.category !== "string" || !q.category.trim()) errors.push("missing category");
     return { valid: errors.length === 0, errors };
   }
 
@@ -257,6 +263,72 @@
     return report;
   }
 
+  function normalizeQuestionText(value) {
+    return String(value == null ? "" : value).trim().toLowerCase().replace(/\s+/g, " ");
+  }
+
+  /*
+   * Cross-dataset isolation check: the PREVIOUS and NEW questioners must never share
+   * ids, question text or question/answer signatures, and every row must stay tagged
+   * to its own mode. Used before a quiz session starts so a mixed dataset is reported
+   * instead of silently served.
+   */
+  function validateDatasetIsolation(previousBank, newBank) {
+    const report = { valid: true, errors: [], duplicateIds: [], duplicateQuestions: [] };
+    const collect = bank => SUBJECTS.flatMap(subject => QUIZ_TYPES.flatMap(quizType => {
+      const rows = bank?.[subject]?.[quizType];
+      return Array.isArray(rows) ? rows.map(question => ({ ...(question || {}), subject, quizType })) : [];
+    }));
+    const previousRows = collect(previousBank);
+    const newRows = collect(newBank);
+    if (!previousRows.length || !newRows.length) {
+      report.valid = false;
+      report.errors.push("One of the datasets is empty");
+      return report;
+    }
+    [[previousRows, "previous"], [newRows, "new"]].forEach(([rows, mode]) => {
+      rows.forEach(question => {
+        const id = String(question?.id || "unknown id");
+        if (!id.startsWith(`${mode.toUpperCase()}-`)) {
+          report.valid = false;
+          report.errors.push(`${id}: id is not tagged as ${mode}`);
+        }
+        const tags = Array.isArray(question?.tags) ? question.tags.map(String) : [];
+        if (tags.length && !tags.includes(mode)) {
+          report.valid = false;
+          report.errors.push(`${id}: tags are not tagged as ${mode}`);
+        }
+      });
+    });
+    const signature = question => JSON.stringify([
+      normalizeQuestionText(question?.question),
+      Array.isArray(question?.choices) ? question.choices.map(choice => String(choice).trim().toLowerCase()).sort() : [],
+      String(question?.answer || "").trim().toLowerCase()
+    ]);
+    const previousIds = new Set(previousRows.map(question => String(question?.id || "")));
+    const previousTexts = new Map(previousRows.map(question => [normalizeQuestionText(question?.question), String(question?.id || "")]));
+    const previousSignatures = new Set(previousRows.map(signature));
+    newRows.forEach(question => {
+      const id = String(question?.id || "");
+      const text = normalizeQuestionText(question?.question);
+      if (previousIds.has(id)) {
+        report.valid = false;
+        report.duplicateIds.push(id);
+        report.errors.push(`${id}: id exists in both datasets`);
+      }
+      if (text && previousTexts.has(text)) {
+        report.valid = false;
+        report.duplicateQuestions.push({ previous: previousTexts.get(text), new: id, question: text });
+        report.errors.push(`${id}: question text is shared with ${previousTexts.get(text)}`);
+      } else if (previousSignatures.has(signature(question))) {
+        report.valid = false;
+        report.duplicateQuestions.push({ previous: "", new: id, question: text });
+        report.errors.push(`${id}: question/answer signature is shared with the previous dataset`);
+      }
+    });
+    return report;
+  }
+
   function rewardBand(level) {
     const n = Math.max(1, Math.min(80, safeInt(level, 1, 80)));
     return REWARD_BANDS.find(b => n <= b.maxLevel) || REWARD_BANDS[3];
@@ -301,6 +373,7 @@
     sanitizeSave,
     validateQuestion,
     validateQuestionBank,
+    validateDatasetIsolation,
     rewardBand,
     calculateAnswerReward,
     milestoneReward

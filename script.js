@@ -2566,33 +2566,22 @@ async function loadQuestionBank() {
             name,
             window.GeonQuestionValidator.validate(bank, name === "NEW" ? "new" : "previous")
         ]);
-        const previousIds = new Set(
-            previousQuestionBank && typeof previousQuestionBank === "object"
-                ? Object.values(previousQuestionBank).flatMap(subject =>
-                    Object.values(subject || {}).flatMap(rows =>
-                        Array.isArray(rows) ? rows.map(q => String(q?.id || "")) : []
-                    )
-                )
-                : []
-        );
-        const crossModeCollisions = new Set(
-            newQuestionBank && typeof newQuestionBank === "object"
-                ? Object.values(newQuestionBank).flatMap(subject =>
-                    Object.values(subject || {}).flatMap(rows =>
-                        Array.isArray(rows) ? rows.map(q => String(q?.id || "")) : []
-                    )
-                ).filter(id => previousIds.has(id))
-                : []
-        );
-        if (crossModeCollisions.size) {
-            console.error("[Question Validator] Previous/New ID collision detected.", [...crossModeCollisions].slice(0, 10));
+        // Guarded so an older cached validator can never break bank loading.
+        const isolation = typeof window.GeonQuestionValidator.validateIsolation === "function"
+            ? window.GeonQuestionValidator.validateIsolation(previousQuestionBank, newQuestionBank)
+            : window.GeonGameCore?.validateDatasetIsolation?.(previousQuestionBank, newQuestionBank)
+                || { valid: true, errors: [], duplicateIds: [], duplicateQuestions: [] };
+        const crossModeCollisions = Array.isArray(isolation.duplicateIds) ? isolation.duplicateIds : [];
+        if (!isolation.valid) {
+            console.error("[Question Validator] Previous/New datasets are not isolated.", isolation.errors.slice(0, 10));
         }
         reports.forEach(([name, report]) => {
             if (!report.valid) console.error(`[Question Validator] ${name} dataset has ${report.errors.length} issue(s).`, report);
         });
         window.ProudGeonQuizQuestionValidation = {
             reports,
-            crossModeCollisions: [...crossModeCollisions]
+            isolation,
+            crossModeCollisions
         };
     }
 

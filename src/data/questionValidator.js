@@ -29,6 +29,9 @@
     },
     validate(bank, expectedMode = "") {
       return global.GeonGameCore?.validateQuestionBank(bank, expectedMode) || { valid: false, total: 0, errors: ["Validator unavailable"], missingLevels: [] };
+    },
+    validateIsolation(previousBank, newBank) {
+      return global.GeonGameCore?.validateDatasetIsolation?.(previousBank, newBank) || { valid: false, errors: ["Isolation validator unavailable"], duplicateIds: [], duplicateQuestions: [] };
     }
   };
 })(window);
