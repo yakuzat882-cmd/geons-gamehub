@@ -85,7 +85,7 @@ const DISTRACTOR_FIXES = {
   "NEW-TECH_1-SUBJECT_1-L15-07": { "Option 1": "CPU cache" },
   "NEW-TECH_1-SUBJECT_1-L17-08": { "Option 1": "expansion slot" },
   "NEW-TECH_2-SUBJECT_1-L04-02": { "Option 1": "NAT" },
-  "NEW-TECH_2-SUBJECT_1-L09-03": { "Option 1": "subnet mask" },
+  "NEW-TECH_2-SUBJECT_1-L09-03": { "Option 1": "ARP" },
   // "liquid damage" sat next to the correct answer "liquid spill" and made the item ambiguous.
   "NEW-TECH_2-SUBJECT_1-L13-02": { "Option 1": "battery swelling", "liquid damage": "secure workspace" },
   "NEW-TECH_2-SUBJECT_1-L18-05": { "Option 1": "TCP", "Option 2": "subnet mask" },
@@ -348,6 +348,17 @@ function main() {
     if (duplicates.length) {
       report.valid = false;
       report.problems.push(`${entry.mode}: duplicate question text inside the bank -> ${duplicates.slice(0, 5).join(" ;; ")}`);
+    }
+    const choiceSets = new Map();
+    const repeatedSets = [];
+    rows(entry.bank).forEach(question => {
+      const key = [...question.choices].map(choice => String(choice).trim().toLowerCase()).sort().join("|");
+      if (choiceSets.has(key)) repeatedSets.push(`${choiceSets.get(key)} vs ${question.id}: {${key}}`);
+      else choiceSets.set(key, question.id);
+    });
+    if (repeatedSets.length) {
+      report.valid = false;
+      report.problems.push(`${entry.mode}: repeated answer set -> ${repeatedSets.slice(0, 5).join(" ;; ")}`);
     }
     if (rows(entry.bank).some(question => question.choices.some(choice => /^Option \d+$/.test(choice)))) {
       report.valid = false;

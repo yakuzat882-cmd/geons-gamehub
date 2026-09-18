@@ -118,6 +118,20 @@ test("previous and new banks share no question text or answer signature", () => 
   assert.deepEqual(sharedSignature.map(q => q.id), []);
 });
 
+test("no two questions inside a bank reuse the exact same answer set", () => {
+  for (const [mode, bank] of [["previous", load("questions.json")], ["new", load("questions.new.json")]]) {
+    const seen = new Map();
+    const repeated = [];
+    for (const question of rows(bank)) {
+      const key = [...question.choices].map(choice => String(choice).trim().toLowerCase()).sort().join("|");
+      if (seen.has(key)) repeated.push(`${seen.get(key)} vs ${question.id}: {${key}}`);
+      else seen.set(key, question.id);
+    }
+    assert.deepEqual(repeated, [], `${mode}: ${repeated.slice(0, 3).join(" ;; ")}`);
+    assert.equal(seen.size, rows(bank).length);
+  }
+});
+
 test("correct answer position stays balanced and is not predictable by length", () => {
   for (const [mode, bank] of [["previous", load("questions.json")], ["new", load("questions.new.json")]]) {
     const questions = rows(bank);
