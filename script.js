@@ -2587,13 +2587,38 @@ async function loadQuestionBank() {
         if (crossModeCollisions.size) {
             console.error("[Question Validator] Previous/New ID collision detected.", [...crossModeCollisions].slice(0, 10));
         }
+        /*
+         * Dataset isolation also means no shared question text: a NEW
+         * question must never be a copy of a PREVIOUS question.
+         */
+        const normalizeForIsolation = text => String(text || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+        const previousTexts = new Set(
+            Object.values(previousQuestionBank || {}).flatMap(subject =>
+                Object.values(subject || {}).flatMap(rows =>
+                    Array.isArray(rows) ? rows.map(q => normalizeForIsolation(q?.question)) : []
+                )
+            )
+        );
+        const crossModeTextCollisions = new Set(
+            Object.values(newQuestionBank || {}).flatMap(subject =>
+                Object.values(subject || {}).flatMap(rows =>
+                    Array.isArray(rows)
+                        ? rows.map(q => normalizeForIsolation(q?.question)).filter(t => t && previousTexts.has(t))
+                        : []
+                )
+            )
+        );
+        if (crossModeTextCollisions.size) {
+            console.error("[Question Validator] Previous/New question-text collision detected.", [...crossModeTextCollisions].slice(0, 10));
+        }
+        window.ProudGeonQuizQuestionValidation = {
+            reports,
+            crossModeCollisions: [...crossModeCollisions],
+            crossModeTextCollisions: [...crossModeTextCollisions]
+        };
         reports.forEach(([name, report]) => {
             if (!report.valid) console.error(`[Question Validator] ${name} dataset has ${report.errors.length} issue(s).`, report);
         });
-        window.ProudGeonQuizQuestionValidation = {
-            reports,
-            crossModeCollisions: [...crossModeCollisions]
-        };
     }
 
     questionBank = getActiveQuestionBank();

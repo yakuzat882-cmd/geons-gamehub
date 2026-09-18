@@ -75,3 +75,131 @@ test("embedded fallbacks expose the same isolated datasets", () => {
   assert.equal(rows(context.window.questionBank).length, 800);
   assert.equal(rows(context.window.newQuestionBank).length, 800);
 });
+
+/* ------------------------------------------------------------------ */
+/* Questioner content-quality gates (questioner upgrade)               */
+/* ------------------------------------------------------------------ */
+
+const normalizeText = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const allQuestions = (bank) => subjects.flatMap(s => quizTypes.flatMap(t => bank[s][t].map(q => ({ ...q, _subject: s, _set: t }))));
+
+test("question texts are unique within a mode (normalized)", () => {
+  for (const name of ["questions.json", "questions.new.json"]) {
+    const bank = load(name);
+    const seen = new Set();
+    for (const q of allQuestions(bank)) {
+      const key = normalizeText(q.question);
+      assert.equal(seen.has(key), false, `${q.id}: duplicate question text in ${name}`);
+      seen.add(key);
+    }
+  }
+});
+
+test("no question text or option set is shared between PREVIOUS and NEW", () => {
+  const previous = new Set(allQuestions(load("questions.json")).map(q => normalizeText(q.question)));
+  const newer = allQuestions(load("questions.new.json"));
+  for (const q of newer) {
+    assert.equal(previous.has(normalizeText(q.question)), false, `${q.id}: text shared across questioners`);
+  }
+});
+
+test("answer option sets never repeat inside a mode", () => {
+  for (const name of ["questions.json", "questions.new.json"]) {
+    const seen = new Set();
+    for (const q of allQuestions(load(name))) {
+      const key = q.choices.map(normalizeText).sort().join("|");
+      assert.equal(seen.has(key), false, `${q.id}: duplicate answer-option set`);
+      seen.add(key);
+    }
+  }
+});
+
+test("every question has exactly 4 unique choices with the answer among them", () => {
+  for (const name of ["questions.json", "questions.new.json"]) {
+    for (const q of allQuestions(load(name))) {
+      assert.equal(q.choices.length, 4, q.id);
+      assert.equal(new Set(q.choices).size, 4, q.id);
+      assert.equal(q.choices.includes(q.answer), true, q.id);
+      assert.ok(q.explanation && q.hint, `${q.id}: missing explanation or hint`);
+    }
+  }
+});
+
+test("answer positions are balanced in both banks (no A/B/C/D pattern)", () => {
+  for (const name of ["questions.json", "questions.new.json"]) {
+    const pos = [0, 0, 0, 0];
+    const qs = allQuestions(load(name));
+    for (const q of qs) pos[q.choices.indexOf(q.answer)] += 1;
+    for (const p of pos) {
+      const share = p / qs.length;
+      assert.ok(share >= 0.18 && share <= 0.32, `${name}: position share ${(share * 100).toFixed(1)}% out of range`);
+    }
+  }
+});
+
+test("answer length is not a clue (correct answer not systematically longest/shortest)", () => {
+  for (const name of ["questions.json", "questions.new.json"]) {
+    const qs = allQuestions(load(name));
+    let longest = 0, shortest = 0;
+    for (const q of qs) {
+      const lens = q.choices.map(c => c.length);
+      const mx = Math.max(...lens), mn = Math.min(...lens);
+      if (q.answer.length === mx && lens.filter(l => l === mx).length === 1) longest += 1;
+      if (q.answer.length === mn && lens.filter(l => l === mn).length === 1) shortest += 1;
+    }
+    assert.ok(longest / qs.length <= 0.45, `${name}: correct answer longest too often (${((longest / qs.length) * 100).toFixed(1)}%)`);
+    assert.ok(shortest / qs.length <= 0.45, `${name}: correct answer shortest too often (${((shortest / qs.length) * 100).toFixed(1)}%)`);
+  }
+});
+
+test("no legacy broken-template or placeholder text remains", () => {
+  const banned = [
+    /where someone is/i,
+    /notices \d+ examples/i,
+    /^Case \d+:/i,
+    /\bOne person is\b/i,
+    /\bLorem ipsum\b/i,
+    /\bdummy\b/i
+  ];
+  for (const name of ["questions.json", "questions.new.json"]) {
+    for (const q of allQuestions(load(name))) {
+      const scan = [q.question, ...q.choices, q.explanation, q.hint].join("\n");
+      for (const re of banned) {
+        assert.equal(re.test(scan), false, `${q.id}: banned pattern ${re}`);
+      }
+      assert.equal(/\ba ([aeiou][a-z-]+)/i.test(scan) && !/\ba (u|one)/i.test(scan), false, `${q.id}: suspicious article`);
+    }
+  }
+});
+
+test("no stock filler distractors remain", () => {
+  const fillers = [
+    "rely on popularity instead of relevant evidence",
+    "change the goal whenever the first attempt becomes difficult",
+    "use a vague response and avoid measuring the outcome",
+    "skip the constraint analysis and act immediately",
+    "avoid documenting the reasoning or result",
+    "treat every setback as proof that the plan cannot work",
+    "ignore feedback that conflicts with the preferred conclusion",
+    "accept the first explanation without checking it",
+    "use a single tactic regardless of the context",
+    "make the decision solely from an unverified assumption"
+  ];
+  const set = new Set(fillers);
+  for (const name of ["questions.json", "questions.new.json"]) {
+    for (const q of allQuestions(load(name))) {
+      for (const c of q.choices) {
+        assert.equal(set.has(String(c).toLowerCase()), false, `${q.id}: stock filler distractor`);
+      }
+    }
+  }
+});
+
+test("question ids follow the mode-subject-set-level format", () => {
+  const re = /^(PREVIOUS|NEW)-(MATH|SCIENCE|PSYCHOLOGY|TECH_1|TECH_2)-SUBJECT_[12]-L\d{2}-\d{2}$/;
+  for (const name of ["questions.json", "questions.new.json"]) {
+    for (const q of allQuestions(load(name))) {
+      assert.match(q.id, re, `${q.id}: id format`);
+    }
+  }
+});

@@ -170,8 +170,10 @@
     const level = Number(q.level);
     if (!Number.isInteger(level) || level < 1 || level > 80) errors.push("invalid level");
     if (typeof q.question !== "string" || !q.question.trim()) errors.push("empty question");
-    if (!Array.isArray(q.choices) || q.choices.length < 2) errors.push("invalid choices");
+    if (!Array.isArray(q.choices) || q.choices.length !== 4) errors.push("choices must be exactly 4");
+    if (Array.isArray(q.choices) && new Set(q.choices.map(String)).size !== q.choices.length) errors.push("duplicate choices");
     if (Array.isArray(q.choices) && !q.choices.includes(q.answer)) errors.push("answer not in choices");
+    if (!q.answer || !String(q.answer).trim()) errors.push("empty answer");
     return { valid: errors.length === 0, errors };
   }
 
