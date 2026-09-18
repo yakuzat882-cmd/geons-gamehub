@@ -11,8 +11,11 @@
  *      changes: id, subject, quiz set, level, difficulty, category, answer and choice
  *      positions are preserved so existing progress stays valid.
  *   3. Article typos ("a analyst", "a online discussion") are corrected.
- *   4. Question texts that were duplicated between the PREVIOUS and NEW banks are
- *      rewritten on the NEW side with new scenarios/values/distractors.
+ *   4. Every NEW-bank MATH question is regenerated from NEW-only scenario families
+ *      (tools/new-math-scenarios.js), so the NEW questioner no longer mirrors the
+ *      PREVIOUS sentence templates with different numbers. Ids, levels, categories,
+ *      difficulties and answer positions are preserved.
+ *   5. The tool fails if any NEW question still reuses a PREVIOUS template.
  *
  * The script is idempotent: running it twice produces byte-identical output.
  * Usage:
@@ -24,6 +27,8 @@
 const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
+
+const { buildNewMathQuestion } = require("./new-math-scenarios");
 
 const ROOT = path.join(__dirname, "..");
 const CHECK_ONLY = process.argv.includes("--check");
@@ -63,22 +68,6 @@ const DISTRACTOR_FIXES = {
   "PREVIOUS-TECH_2-SUBJECT_2-L20-04": { "Option 1": "device driver" },
   "PREVIOUS-TECH_2-SUBJECT_2-L24-05": { "Option 1": "activation" },
   "PREVIOUS-TECH_2-SUBJECT_2-L26-06": { "Option 1": "activation" },
-  "NEW-MATH-SUBJECT_1-L12-04": { "Option 1": "15" },
-  "NEW-MATH-SUBJECT_1-L21-06": { "Option 1": "324" },
-  "NEW-MATH-SUBJECT_1-L25-07": { "Option 1": "124" },
-  "NEW-MATH-SUBJECT_1-L28-08": { "Option 1": "250" },
-  "NEW-MATH-SUBJECT_1-L36-09": { "Option 1": "368" },
-  "NEW-MATH-SUBJECT_1-L38-10": { "Option 1": "197" },
-  "NEW-MATH-SUBJECT_1-L40-11": { "Option 1": "161" },
-  "NEW-MATH-SUBJECT_1-L45-12": { "Option 1": "245" },
-  "NEW-MATH-SUBJECT_2-L15-04": { "Option 1": "16" },
-  "NEW-MATH-SUBJECT_2-L19-05": { "Option 1": "20" },
-  "NEW-MATH-SUBJECT_2-L20-06": { "Option 1": "35" },
-  "NEW-MATH-SUBJECT_2-L28-07": { "Option 1": "198" },
-  "NEW-MATH-SUBJECT_2-L30-08": { "Option 1": "162" },
-  "NEW-MATH-SUBJECT_2-L31-09": { "Option 1": "222" },
-  "NEW-MATH-SUBJECT_2-L35-10": { "Option 1": "196" },
-  "NEW-MATH-SUBJECT_2-L45-11": { "Option 1": "336" },
   "NEW-SCIENCE-SUBJECT_1-L06-02": { "Option 1": "ship flotation" },
   "NEW-SCIENCE-SUBJECT_1-L25-03": { "Option 1": "fluid replacement" },
   "NEW-SCIENCE-SUBJECT_2-L11-01": { "Option 1": "moment of inertia" },
@@ -98,32 +87,6 @@ const DISTRACTOR_FIXES = {
   "NEW-TECH_2-SUBJECT_2-L31-06": { "Option 1": "VLAN", "Option 2": "DHCP" },
   "NEW-TECH_2-SUBJECT_2-L39-04": { "Option 1": "battery swelling" },
   "NEW-TECH_2-SUBJECT_2-L40-08": { "Option 1": "NAT" }
-};
-
-// Questions whose text was reused verbatim by the other questioner mode. Only the NEW
-// side is rewritten so the PREVIOUS bank (and its stored progress) is untouched.
-const QUESTION_REWRITES = {
-  "NEW-MATH-SUBJECT_1-L08-02": {
-    question: "A van leaves the depot carrying 46 boxes. After 16 boxes are unloaded at the first stop, how many boxes are still on board?",
-    choices: ["30", "62", "32", "16"],
-    answer: "30",
-    explanation: "Start from 46 boxes and remove the 16 that were unloaded: 46 − 16 = 30 boxes remain.",
-    hint: "Subtract the unloaded boxes from the starting load."
-  },
-  "NEW-MATH-SUBJECT_1-L09-03": {
-    question: "A baker makes 4 trays of bread each day for 5 days, then bakes 1 extra tray for a special order. How many trays are made in total?",
-    choices: ["21", "20", "16", "25"],
-    answer: "21",
-    explanation: "Multiply the daily trays by the days (4 × 5 = 20) and add the extra tray: 20 + 1 = 21 trays.",
-    hint: "Find the daily total first, then add the extra tray."
-  },
-  "NEW-MATH-SUBJECT_2-L19-05": {
-    question: "A courier delivers 5 parcels per shift for 3 shifts, then delivers 3 extra parcels before the week ends. How many parcels are delivered in total?",
-    choices: ["23", "18", "15", "20"],
-    answer: "18",
-    explanation: "Multiply parcels per shift by the shifts (5 × 3 = 15) and add the 3 extra parcels: 15 + 3 = 18 parcels.",
-    hint: "Multiply first, then add the extra deliveries."
-  }
 };
 
 /* ------------------------------------------------- stem rewrite machinery */
@@ -254,7 +217,31 @@ function normalizeText(value) {
 
 /* ------------------------------------------------------------------- main */
 
-function repairBank(bank, usedTexts, stats) {
+function regenerateNewMath(bank, usedTexts, stats, uniqueness) {
+  rows(bank).forEach(question => {
+    if (question.subject !== "MATH" || !String(question.id).startsWith("NEW-")) return;
+    const answerIndex = question.choices.indexOf(question.answer);
+    if (answerIndex < 0) throw new Error(`Cannot preserve the answer position of ${question.id}`);
+    const built = buildNewMathQuestion({
+      id: question.id,
+      category: question.category,
+      level: question.level,
+      answerIndex,
+      isUnique: uniqueness.isUnique
+    });
+    question.question = built.question;
+    question.choices = built.choices;
+    question.answer = built.answer;
+    question.explanation = built.explanation;
+    question.hint = built.hint;
+    if (!question.choices.includes(question.answer)) throw new Error(`Answer lost in ${question.id}`);
+    uniqueness.reserve(built);
+    stats.newMathScenarios += 1;
+  });
+}
+
+function repairBank(bank, usedTexts, stats, uniqueness) {
+  regenerateNewMath(bank, usedTexts, stats, uniqueness);
   rows(bank).forEach(question => {
     const fixes = DISTRACTOR_FIXES[question.id];
     if (fixes) {
@@ -268,19 +255,6 @@ function repairBank(bank, usedTexts, stats) {
       }
       if (!question.choices.includes(question.answer)) {
         throw new Error(`Distractor fix removed the answer from ${question.id}`);
-      }
-    }
-
-    const rewrite = QUESTION_REWRITES[question.id];
-    if (rewrite) {
-      stats.rewrittenItems += 1;
-      question.question = rewrite.question;
-      question.choices = rewrite.choices;
-      question.answer = rewrite.answer;
-      question.explanation = rewrite.explanation;
-      question.hint = rewrite.hint;
-      if (!question.choices.includes(question.answer)) {
-        throw new Error(`Rewrite broke the answer membership of ${question.id}`);
       }
     }
 
@@ -312,24 +286,45 @@ function main() {
   ];
 
   // Shared "already used" pool so the two banks can never end up with identical stems.
+  // NEW MATH rows are excluded because they are regenerated wholesale; seeding the pool
+  // with their outgoing text would make the output depend on the starting state.
   const usedTexts = new Set();
   files.forEach(file => {
     rows(JSON.parse(fs.readFileSync(path.join(ROOT, file.json), "utf8")))
-      .forEach(question => usedTexts.add(question.question));
+      .forEach(question => {
+        if (file.mode === "new" && question.subject === "MATH") return;
+        usedTexts.add(question.question);
+      });
   });
   // Only the stems we are about to regenerate may be reused; everything else stays reserved.
   const banks = files.map(file => {
     const bank = JSON.parse(fs.readFileSync(path.join(ROOT, file.json), "utf8"));
     rows(bank).forEach(question => {
-      if (STEM_A.test(question.question) || STEM_B.test(question.question) || QUESTION_REWRITES[question.id]) {
+      if (STEM_A.test(question.question) || STEM_B.test(question.question)) {
         usedTexts.delete(question.question);
       }
     });
     return { ...file, bank };
   });
 
-  const stats = { distractors: 0, rewrittenItems: 0, stems: 0, articles: 0 };
-  banks.forEach(entry => repairBank(entry.bank, usedTexts, stats));
+  // Uniqueness guard shared by the regenerated MATH scenarios: no repeated question
+  // text and no repeated answer set anywhere in either bank.
+  const choiceKey = choices => [...choices].map(choice => String(choice).trim().toLowerCase()).sort().join("|");
+  const usedChoiceSets = new Set();
+  banks.forEach(entry => rows(entry.bank).forEach(question => {
+    if (entry.mode === "new" && question.subject === "MATH") return; // these are being regenerated
+    usedChoiceSets.add(choiceKey(question.choices));
+  }));
+  const uniqueness = {
+    isUnique: candidate => !usedTexts.has(candidate.question) && !usedChoiceSets.has(choiceKey(candidate.choices)),
+    reserve(candidate) {
+      usedTexts.add(candidate.question);
+      usedChoiceSets.add(choiceKey(candidate.choices));
+    }
+  };
+
+  const stats = { distractors: 0, stems: 0, articles: 0, newMathScenarios: 0 };
+  banks.forEach(entry => repairBank(entry.bank, usedTexts, stats, uniqueness));
 
   const report = { valid: true, problems: [] };
   banks.forEach(entry => {
@@ -369,6 +364,17 @@ function main() {
       report.problems.push(`${entry.mode}: article typo still present`);
     }
   });
+
+  const masked = value => String(value).toLowerCase().replace(/\d+/g, "#").replace(/[^a-z#]+/g, " ").trim();
+  const previousTemplates = new Set(rows(banks[0].bank).map(question => masked(question.question)));
+  const clonedTemplates = rows(banks[1].bank)
+    .filter(question => previousTemplates.has(masked(question.question)))
+    .map(question => `${question.id}: "${question.question}"`);
+  if (clonedTemplates.length) {
+    report.valid = false;
+    report.problems.push(`new: ${clonedTemplates.length} question(s) reuse a PREVIOUS template -> ${clonedTemplates.slice(0, 3).join(" ;; ")}`);
+  }
+  console.log("NEW questions reusing a PREVIOUS template:", clonedTemplates.length);
 
   const isolation = core.validateDatasetIsolation
     ? core.validateDatasetIsolation(banks[0].bank, banks[1].bank)

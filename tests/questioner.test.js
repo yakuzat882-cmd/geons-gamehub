@@ -238,3 +238,53 @@ test("the question bank repair tool verifies the shipped data without changes", 
     .map(file => fs.readFileSync(path.join(root, file), "utf8"));
   assert.deepEqual(after, before);
 });
+
+/*
+ * Independent arithmetic check: every NEW MATH answer is recomputed straight from the
+ * question wording, so a wording/computation mismatch in the generator cannot slip through.
+ */
+const NEW_MATH_RULES = [
+  { re: /^A shelf holds (\d+) boxes in each of (\d+) rows\./, calc: n => n[0] * n[1] },
+  { re: /^A crate holds (\d+) bottles in each of (\d+) layers, and (\d+) identical crates are shipped\./, calc: n => n[0] * n[1] * n[2] },
+  { re: /^Each of (\d+) trucks carries (\d+) pallets, every pallet holds (\d+) cartons, and every carton holds (\d+) units\./, calc: n => n[0] * n[1] * n[2] * n[3] },
+  { re: /^A factory runs (\d+) lines\. Each line has (\d+) stations, each station assembles (\d+) parts per hour, and the shift lasts (\d+) hours\. Finished parts are packed (\d+) to a carton\./, calc: n => Math.floor((n[0] * n[1] * n[2] * n[3]) / n[4]) },
+  { re: /^A teacher shares (\d+) stickers equally among (\d+) albums\./, calc: n => n[0] / n[1] },
+  { re: /^A warehouse stacks (\d+) boxes into (\d+) equal piles, then splits each pile equally across (\d+) shelves\./, calc: n => n[0] / n[1] / n[2] },
+  { re: /^(\d+) litres of fuel fill (\d+) identical tanks equally, and each tank's fuel is used for (\d+) equal trips\./, calc: n => n[0] / n[1] / n[2] },
+  { re: /^A data centre stores (\d+) files across (\d+) servers\. Each server spreads its files equally over (\d+) disks, and each disk keeps them in (\d+) equal folders\./, calc: n => n[0] / n[1] / n[2] / n[3] },
+  { re: /^A market seller weighs a (\d+) kg sack, a (\d+) kg sack and a (\d+) kg sack\./, calc: n => n.reduce((a, b) => a + b, 0) },
+  { re: /^A truck is loaded with (\d+) kg, then (\d+) kg, then (\d+) kg and finally (\d+) kg\./, calc: n => n.reduce((a, b) => a + b, 0) },
+  { re: /^Over five training days a cyclist rides (\d+), (\d+), (\d+), (\d+) and (\d+) kilometres\./, calc: n => n.reduce((a, b) => a + b, 0) },
+  { re: /^A reservoir records inflows of (\d+), (\d+), (\d+), (\d+), (\d+) and (\d+) megalitres/, calc: n => n.reduce((a, b) => a + b, 0) },
+  { re: /^A water tank holds (\d+) litres\. After (\d+) litres are drained/, calc: n => n[0] - n[1] },
+  { re: /^A wallet holds (\d+) pesos\. After spending (\d+) pesos and then (\d+) pesos/, calc: n => n[0] - n[1] - n[2] },
+  { re: /^A silo stores (\d+) sacks of rice\. It ships (\d+) sacks, then (\d+) sacks, then (\d+) sacks\./, calc: n => n[0] - n[1] - n[2] - n[3] },
+  { re: /^A reservoir holds (\d+) units of water\. It loses (\d+) units to usage, (\d+) to leakage, (\d+) to cleaning and (\d+) to evaporation\./, calc: n => n[0] - n[1] - n[2] - n[3] - n[4] },
+  { re: /^A nurse works (\d+) hours each day for (\d+) days, then adds (\d+) hours of overtime\./, calc: n => n[0] * n[1] + n[2] },
+  { re: /^A printer produces (\d+) copies per minute for (\d+) minutes, then (\d+) copies are discarded/, calc: n => n[0] * n[1] - n[2] },
+  { re: /^A fleet of (\d+) vans each delivers (\d+) parcels per trip for (\d+) trips, and (\d+) parcels are returned/, calc: n => n[0] * n[1] * n[2] - n[3] },
+  { re: /^A plant runs (\d+) lines, each producing (\d+) units per hour for (\d+) hours\. After (\d+) units fail inspection, the survivors are packed (\d+) to a carton\./, calc: n => Math.floor((n[0] * n[1] * n[2] - n[3]) / n[4]) }
+];
+
+test("every NEW MATH answer recomputes correctly from its own wording", () => {
+  const math = rows(load("questions.new.json")).filter(question => question.subject === "MATH");
+  assert.equal(math.length, 160);
+  for (const question of math) {
+    const rule = NEW_MATH_RULES.find(candidate => candidate.re.test(question.question));
+    assert.ok(rule, `${question.id}: no rule matches "${question.question}"`);
+    const values = question.question.match(rule.re).slice(1).map(Number);
+    const expected = rule.calc(values);
+    assert.ok(Number.isInteger(expected) && expected > 0, `${question.id}: expected ${expected} is not a positive integer`);
+    assert.equal(String(expected), String(question.answer), `${question.id}: wording gives ${expected}, data says ${question.answer}`);
+    assert.ok(question.explanation.includes(String(question.answer)), `${question.id}: explanation does not state the answer`);
+    assert.equal(new Set(question.choices).size, 4, `${question.id}: choices are not unique`);
+    assert.ok(question.choices.every(choice => Number(choice) > 0), `${question.id}: a choice is not a positive number`);
+  }
+});
+
+test("the NEW questioner never reuses a PREVIOUS question template", () => {
+  const masked = value => String(value).toLowerCase().replace(/\d+/g, "#").replace(/[^a-z#]+/g, " ").trim();
+  const previousTemplates = new Set(rows(load("questions.json")).map(question => masked(question.question)));
+  const cloned = rows(load("questions.new.json")).filter(question => previousTemplates.has(masked(question.question)));
+  assert.deepEqual(cloned.map(question => `${question.id}: ${question.question}`), []);
+});
