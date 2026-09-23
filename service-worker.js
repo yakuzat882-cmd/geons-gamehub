@@ -1,4 +1,4 @@
-const CACHE_VERSION = "proudgeonquiz-v7-2026-09-18-questioner-banks-v5";
+const CACHE_VERSION = "proudgeonquiz-v8-2026-09-18-feel-pack-v1";
 const SHELL = [
   "./",
   "./index.html",
@@ -8,6 +8,8 @@ const SHELL = [
   "./src/state/storage.js",
   "./src/data/questionValidator.js",
   "./src/quiz/scoring.js",
+  "./src/quiz/levelModifiers.js",
+  "./src/quiz/mistakeVault.js",
   "./src/progression/streaks.js",
   "./src/data/dailyChallenge.js",
   "./src/audio/audioManager.js",

@@ -78,6 +78,37 @@ function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+/* quizState is declared with `let`, so it is read through the page's own scope. */
+function quizStateNow(window) {
+  return window.eval("quizState");
+}
+
+function findQuestion(bank, text) {
+  return SUBJECTS
+    .flatMap(subject => SETS.flatMap(set => bank?.[subject]?.[set] || []))
+    .find(entry => entry.question === text);
+}
+
+function findLevelWithModifier(window, subject, set, modifierId) {
+  const questioner = window.getActiveQuestioner();
+  for (let level = 1; level <= 80; level += 1) {
+    const modifier = window.GeonLevelModifiers.getLevelModifier(subject, set, level, questioner);
+    if (modifier.id === modifierId) return { level, modifier };
+  }
+  return null;
+}
+
+function answerThroughUi(window, bank, correct) {
+  const text = document_getText(window, "quizQuestionText");
+  const question = findQuestion(bank, text);
+  const buttons = [...window.document.querySelectorAll(".quiz-answer")];
+  const selected = correct
+    ? buttons.find(button => button.dataset.answer === question?.answer)
+    : buttons.find(button => button.dataset.answer !== question?.answer && !button.disabled);
+  if (selected) selected.click();
+  return { question, selected };
+}
+
 async function run(origin, server) {
   const problems = [];
   const virtualConsole = new VirtualConsole();
@@ -240,6 +271,165 @@ async function run(origin, server) {
   check("all five subjects are playable in both modes",
     subjectPlayed.every(entry => entry.answered),
     subjectPlayed.filter(entry => entry.mode === "previous").map(entry => entry.subject).join(", "));
+
+  /* ---------------------------------------------------------------- feel pack */
+  const BAND_SECONDS = { NORMAL: 45, HARD: 35, INSANE: 30, IMPOSSIBLE: 20 };
+  const timerProblems = [];
+  const badgeProblems = [];
+  const mysteryProblems = [];
+  window.setQuestioner("previous");
+  for (const modifierId of ["NONE", "DOUBLE_COINS", "TIME_RUSH", "MYSTERY"]) {
+    const found = findLevelWithModifier(window, "SCIENCE", "SUBJECT 1", modifierId);
+    if (!found) { badgeProblems.push(`${modifierId}: no level found`); continue; }
+    window.openSubjectSelection("SCIENCE");
+    window.openLevelSelection("A");
+    window.startQuizAtSelectedLevel("A", found.level);
+    await wait(180);
+    const active = quizStateNow(window).modifier;
+    const badge = window.document.getElementById("quizModifierBadge");
+    if (!active || active.id !== modifierId) badgeProblems.push(`${modifierId}: state is ${active && active.id}`);
+    if (modifierId === "NONE") {
+      if (badge && !badge.hidden) badgeProblems.push("NONE: badge is still visible");
+    } else if (!badge || badge.hidden || !badge.textContent.includes(active.label)) {
+      badgeProblems.push(`${modifierId}: badge "${badge ? badge.textContent : "missing"}"`);
+    }
+
+    const question = quizStateNow(window).questions[quizStateNow(window).index];
+    const base = BAND_SECONDS[question.difficulty] || 30;
+    const expected = Math.max(12, base + (Number(active.timerDelta) || 0));
+    if (!(quizStateNow(window).timer <= expected && quizStateNow(window).timer >= expected - 2)) {
+      timerProblems.push(`${modifierId} L${found.level}: timer ${quizStateNow(window).timer} != ${expected}`);
+    }
+
+    if (modifierId === "MYSTERY") {
+      const hidden = [...window.document.querySelectorAll(".quiz-answer.mystery")];
+      const visible = [...window.document.querySelectorAll(".quiz-answer:not(:disabled)")];
+      if (hidden.length !== 1) mysteryProblems.push(`hidden answers: ${hidden.length}`);
+      if (visible.length !== 3) mysteryProblems.push(`visible answers: ${visible.length}`);
+      if (hidden.length === 1 && hidden[0].dataset.answer === quizStateNow(window).currentCorrect) mysteryProblems.push("the correct answer was hidden");
+    }
+  }
+  check("level twists match the deterministic table and shorten the clock", badgeProblems.length === 0 && timerProblems.length === 0,
+    [...badgeProblems, ...timerProblems].join(" | ") || "NONE / DOUBLE_COINS / TIME_RUSH / MYSTERY verified");
+  check("MYSTERY hides exactly one wrong answer", mysteryProblems.length === 0, mysteryProblems.join(" | ") || "one wrong answer hidden, correct answer kept");
+
+  /* No hint on a NO HINT level. */
+  const noHint = findLevelWithModifier(window, "MATH", "SUBJECT 1", "NO_HINT");
+  window.eval("itemInventory.hint = 5");
+  window.openSubjectSelection("MATH");
+  window.openLevelSelection("A");
+  window.startQuizAtSelectedLevel("A", noHint.level);
+  await wait(180);
+  const hintBlocked = window.canUseItem("hint") === false;
+  const hintUsed = window.useItem("hint") === false;
+  const feedback = document_getText(window, "quizItemFeedback") || document_getText(window, "itemFeedback");
+  check("NO HINT blocks the hint item with a clear message", hintBlocked && hintUsed,
+    `canUseItem=${!hintBlocked ? "allowed" : "blocked"}, feedback="${feedback.slice(0, 60)}"`);
+
+  /* Combo meter: three correct answers in a row. */
+  window.setQuestioner("previous");
+  window.openSubjectSelection("MATH");
+  window.openLevelSelection("A");
+  window.startQuizAtSelectedLevel("A", 1);
+  await wait(180);
+  const coinBank = sample.previous;
+  for (let step = 0; step < 3; step += 1) {
+    answerThroughUi(window, coinBank, true);
+    await wait(180);
+    const next = window.document.getElementById("quizNextButton");
+    if (next) next.click();
+    await wait(200);
+  }
+  const meter = window.document.getElementById("quizComboMeter");
+  const meterLabel = document_getText(window, "quizComboLabel");
+  const meterShown = Boolean(meter && meter.classList.contains("show"));
+  check("the combo meter appears and names the next multiplier",
+    quizStateNow(window).streak >= 3 && meterShown && /×\d/.test(meterLabel),
+    `streak ${quizStateNow(window).streak}, label "${meterLabel}", shown ${meterShown}`);
+
+  /* Speed bonus and perfect level bonus pay out in coins. */
+  const coinsBeforePerfect = Number(quizStateNow(window).coins || 0);
+  window.openSubjectSelection("MATH");
+  window.openLevelSelection("A");
+  window.startQuizAtSelectedLevel("A", 5);
+  await wait(180);
+  const perfectLevel = quizStateNow(window).index + 1;
+  const perfectAnswers = window.eval(`getPerfectLevelCount()`);
+  answerThroughUi(window, coinBank, true);
+  await wait(180);
+  const nextPerfect = window.document.getElementById("quizNextButton");
+  if (nextPerfect) nextPerfect.click();
+  await wait(250);
+  const perfectAfter = window.eval("getPerfectLevelCount()");
+  check("a perfect level is counted and paid", perfectAfter > perfectAnswers,
+    `perfect levels ${perfectAnswers} → ${perfectAfter}, coins ${coinsBeforePerfect} → ${quizStateNow(window)?.coins ?? "n/a"} at L${perfectLevel}`);
+
+  /* Sudden death ends the run on the first finalized wrong answer. */
+  const sudden = findLevelWithModifier(window, "TECH 2", "SUBJECT 2", "SUDDEN_DEATH");
+  window.openSubjectSelection("TECH 2");
+  window.openLevelSelection("B");
+  window.startQuizAtSelectedLevel("B", sudden.level);
+  await wait(180);
+  window.eval("quizState.itemState.secondChanceUsed = true");
+  answerThroughUi(window, sample.previous, false);
+  await wait(200);
+  const suddenLives = quizStateNow(window).lives;
+  const suddenNext = window.document.getElementById("quizNextButton");
+  if (suddenNext) suddenNext.click();
+  await wait(300);
+  const gameOverShown = Boolean(window.document.getElementById("gameOverScreen")?.classList.contains("show"));
+  check("SUDDEN DEATH ends the run after one wrong answer", suddenLives === 0 && gameOverShown,
+    `lives ${suddenLives}, game over screen ${gameOverShown}`);
+
+  /* Mistake Vault: a wrong answer is stored, the drill plays it, and the drill is free. */
+  window.document.getElementById("gameOverScreen")?.classList.remove("show");
+  window.setQuestioner("previous");
+  window.openSubjectSelection("PSYCHOLOGY");
+  window.openLevelSelection("A");
+  window.startQuizAtSelectedLevel("A", 12);
+  await wait(180);
+  const storedBefore = window.eval("loadMistakeVault().length");
+  const wrongAnswer = answerThroughUi(window, sample.previous, false);
+  await wait(220);
+  const storedAfter = window.eval("loadMistakeVault().length");
+  const vaultStatus = document_getText(window, "mistakeVaultHomeStatus");
+  const vaultCardEnabled = window.document.getElementById("mistakeVaultCard")?.disabled === false;
+  check("a wrong answer lands in the Mistake Vault and updates the home card",
+    storedAfter === storedBefore + 1 && vaultCardEnabled && /TO CLEAR/.test(vaultStatus),
+    `entries ${storedBefore} → ${storedAfter}, status "${vaultStatus}"`);
+
+  window.eval("closeQuizVisualOnly(); document.body.classList.remove('quiz-active');");
+  const coinsBeforeDrill = Number(window.eval("gameData.coins"));
+  const pointsBeforeDrill = Number(window.eval("gameData.points"));
+  const progressBeforeDrill = window.getQuizProgress("PSYCHOLOGY", "SUBJECT 1");
+  window.startMistakeVaultDrill();
+  await wait(220);
+  const drillMode = quizStateNow(window).mode;
+  const drillFirst = quizStateNow(window).questions[0]?.id;
+  const drillClass = window.document.body.classList.contains("vault-active");
+  answerThroughUi(window, sample.previous, true);
+  await wait(220);
+  const drillNext = window.document.getElementById("quizNextButton");
+  if (drillNext) drillNext.click();
+  await wait(300);
+  const coinsAfterDrill = Number(window.eval("gameData.coins"));
+  const pointsAfterDrill = Number(window.eval("gameData.points"));
+  const progressAfterDrill = window.getQuizProgress("PSYCHOLOGY", "SUBJECT 1");
+  const streakAfterDrill = window.eval(`loadMistakeVault().find(entry => entry.id === '${wrongAnswer.question?.id}')?.correctStreak ?? -1`);
+  check("the Mistake Vault drill replays the stored question without touching progression",
+    drillMode === "vault" && drillFirst === wrongAnswer.question?.id && drillClass &&
+    coinsAfterDrill === coinsBeforeDrill && pointsAfterDrill === pointsBeforeDrill && progressAfterDrill === progressBeforeDrill,
+    `mode ${drillMode}, question ${drillFirst}, coins ${coinsBeforeDrill}→${coinsAfterDrill}, points ${pointsBeforeDrill}→${pointsAfterDrill}, progress ${progressBeforeDrill}→${progressAfterDrill}`);
+  check("a correct retry moves the stored mistake towards retirement", streakAfterDrill === 1,
+    `correct streak after retry: ${streakAfterDrill}`);
+  /* Leave through the real BACK button; a drill must close without a confirm dialog. */
+  window.closeQuizScreen();
+  await wait(200);
+  const drillExited = window.document.body.classList.contains("vault-active") === false;
+  const drillScreenClosed = window.document.getElementById("quizScreen")?.classList.contains("show") === false;
+  check("leaving the drill returns to the home screen",
+    drillExited && drillScreenClosed && quizStateNow(window).mode === "normal",
+    `class removed ${drillExited}, screen closed ${drillScreenClosed}, mode ${quizStateNow(window).mode}`);
 
   check("no JavaScript console errors from the questioner", problems.length === 0,
     problems.slice(0, 3).join(" | ") || "clean");

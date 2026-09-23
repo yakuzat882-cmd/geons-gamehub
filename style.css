@@ -10545,3 +10545,136 @@ body[data-theme="dark"] .mission-objective-card p {
   .mission-objective-card p { font-size: 12px; }
   .mission-question-card h3 { font-size: 15px; }
 }
+
+/* =========================================================
+   FEEL PACK
+   Combo meter, level twist badge, mystery answers, mistakes
+   vault card. Token-based so ORIGINAL / LIGHT / DARK all work.
+========================================================= */
+
+.quiz-modifier {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  gap: 6px;
+  margin: 0 auto 10px;
+  padding: 6px 12px;
+  border: 2px solid var(--accent-2);
+  border-radius: 999px;
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .6px;
+  box-shadow: var(--shadow-card);
+}
+.quiz-modifier[hidden] { display: none !important; }
+
+.quiz-combo {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  margin: 0 0 10px;
+}
+.quiz-combo.show { display: flex; }
+.quiz-combo-track {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-0);
+  overflow: hidden;
+}
+.quiz-combo-fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: width .28s ease;
+}
+.quiz-combo-label {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.quiz-combo.fever .quiz-combo-label { color: var(--accent-2); }
+.quiz-combo.fever .quiz-combo-track { border-color: var(--accent-2); }
+
+body.combo-fever .quiz-screen-box {
+  box-shadow: 0 0 22px rgba(154, 92, 255, .45);
+  transition: box-shadow .3s ease;
+}
+
+.quiz-timer.timer-low {
+  color: var(--danger);
+  animation: quizTimerPulse .9s infinite;
+}
+@keyframes quizTimerPulse {
+  50% { transform: scale(1.08); }
+}
+
+.quiz-answer.mystery,
+.quiz-answer.mystery:disabled {
+  border-style: dashed;
+  color: var(--text-muted);
+  opacity: .7;
+  letter-spacing: 1px;
+  font-size: 11px;
+}
+
+.mistake-vault-card {
+  width: 100%;
+  margin: 14px 0 0;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  border: 2px solid var(--accent-2);
+  border-radius: var(--radius-card);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.mistake-vault-card:active { transform: scale(.99); }
+.mistake-vault-card.is-empty { opacity: .7; cursor: not-allowed; }
+.mistake-vault-icon { font-size: 28px; line-height: 1; }
+.mistake-vault-copy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 3px; }
+.mistake-vault-copy strong { font-size: 14px; letter-spacing: .5px; }
+.mistake-vault-copy small { font-size: 10px; opacity: .78; }
+.mistake-vault-arrow { font-size: 22px; font-weight: 800; }
+
+.level-selection-button.has-modifier { position: relative; border-color: var(--accent-2); }
+.level-selection-button.has-modifier::after {
+  content: "◆";
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  font-size: 8px;
+  color: var(--accent-2);
+}
+
+/* The practice drill hides economy panels but keeps the combo and timer. */
+body.vault-active .quiz-status,
+body.vault-active .quiz-item-bar { display: none !important; }
+
+@media (max-width: 375px) {
+  .quiz-combo-label { font-size: 9px; }
+  .mistake-vault-copy strong { font-size: 13px; }
+  .mistake-vault-icon { font-size: 24px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quiz-combo-fill { transition: none; }
+  .quiz-timer.timer-low { animation: none; }
+  body.combo-fever .quiz-screen-box { transition: none; }
+}

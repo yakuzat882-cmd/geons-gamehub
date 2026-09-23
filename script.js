@@ -1144,7 +1144,10 @@ function renderLevelSelection() {
         const level = index + 1;
         const padded = String(level).padStart(2, "0");
         const selected = level === levelSelectionSelectedLevel ? " selected" : "";
-        return `<button type="button" class="level-selection-button${selected}" data-level="${level}" aria-label="Level ${padded}">${padded}</button>`;
+        const modifier = levelModifierFor(selectedSubject, selectedQuizType, level);
+        const twist = modifier.id !== "NONE";
+        const label = twist ? `Level ${padded} — ${modifier.label}` : `Level ${padded}`;
+        return `<button type="button" class="level-selection-button${selected}${twist ? " has-modifier" : ""}" data-level="${level}" data-modifier="${twist ? modifier.id : ""}" title="${twist ? modifier.description : ""}" aria-label="${label}">${padded}</button>`;
     }).join("");
 
     grid.querySelectorAll(".level-selection-button").forEach(button => {
@@ -1224,6 +1227,29 @@ function getActiveQuestionBank() {
 const ITEM_INVENTORY_KEY = "proudGeonQuizItemInventoryV1";
 const BEST_STREAK_KEY = "proudGeonQuizBestStreakV1";
 const MAX_QUIZ_LIVES = 8;
+
+/*
+ * Feel pack constants: question time follows the difficulty band, a fast correct
+ * answer pays a small coin bonus, and a level without mistakes or items pays a
+ * perfect-level bonus.
+ */
+const QUESTION_TIME_BY_DIFFICULTY = Object.freeze({
+    NORMAL: 45,
+    HARD: 35,
+    INSANE: 30,
+    IMPOSSIBLE: 20
+});
+const DEFAULT_QUESTION_SECONDS = 30;
+const SPEED_BONUS_SECONDS = 10;
+const SPEED_BONUS_COINS = Object.freeze({
+    NORMAL: 1,
+    HARD: 2,
+    INSANE: 3,
+    IMPOSSIBLE: 4
+});
+const PERFECT_LEVEL_COINS = 8;
+const PERFECT_LEVEL_POINTS = 5;
+const PERFECT_LEVEL_SCORE = 50;
 const STREAK_MILESTONES = Object.freeze({
     3: { label: "HOT START", score: 25, coins: 0, points: 0 },
     5: { label: "ON FIRE", score: 50, coins: 5, points: 0 },
@@ -1530,7 +1556,7 @@ function canUseItem(id) {
     if (!isQuizActive()) return false;
 
     if (id === "timeBoost") return Boolean(quizState.timerId && quizState.timer > 0);
-    if (id === "hint") return true;
+    if (id === "hint") return !getActiveLevelModifier().blocksHint;
     if (id === "fiftyFifty") {
         return !quizState.itemState.fiftyFiftyUsed &&
             document.querySelectorAll(".quiz-answer:not(:disabled)").length >= 3;
@@ -1641,6 +1667,49 @@ function updateComboDisplay() {
     el.classList.toggle("combo-active", multiplier > 1);
     el.dataset.multiplier = String(multiplier);
     el.setAttribute("aria-label", multiplier > 1 ? `Current streak: ${streak}, combo x${multiplier}` : `Current streak: ${streak}`);
+    updateComboMeter(streak);
+}
+
+/*
+ * Combo meter: shows the current multiplier and how many correct answers are left
+ * before the next one, then switches to the FEVER look from ×2 upwards.
+ */
+const COMBO_TIERS = Object.freeze([3, 5, 10, 15, 20]);
+
+function comboProgress(streak) {
+    const value = safeNonNegativeInt(streak, 0, 100000);
+    const index = COMBO_TIERS.findIndex(tier => value < tier);
+    if (index < 0) return { multiplier: getStreakComboMultiplier(value), next: 0, remaining: 0, progress: 1 };
+    const next = COMBO_TIERS[index];
+    const previous = index === 0 ? 0 : COMBO_TIERS[index - 1];
+    const span = Math.max(1, next - previous);
+    return {
+        multiplier: getStreakComboMultiplier(value),
+        next,
+        remaining: next - value,
+        progress: Math.min(1, Math.max(0, (value - previous) / span))
+    };
+}
+
+function updateComboMeter(streak) {
+    const meter = document.getElementById("quizComboMeter");
+    if (!meter) return;
+    const info = comboProgress(streak);
+    const visible = safeNonNegativeInt(streak, 0, 100000) > 0 && !isPracticeOnlyMode();
+    meter.classList.toggle("show", visible);
+    meter.classList.toggle("fever", info.multiplier >= 2);
+    const fill = document.getElementById("quizComboFill");
+    if (fill) fill.style.width = `${Math.round(info.progress * 100)}%`;
+    const label = document.getElementById("quizComboLabel");
+    if (label) {
+        label.textContent = info.next
+            ? `COMBO ×${info.multiplier} • ${info.remaining} TO ×${getStreakComboMultiplier(info.next)}`
+            : `COMBO ×${info.multiplier} • MAX`;
+    }
+    meter.setAttribute("aria-label", info.next
+        ? `Combo multiplier ${info.multiplier}, ${info.remaining} more correct for the next multiplier`
+        : `Combo multiplier ${info.multiplier}, maximum reached`);
+    document.body.classList.toggle("combo-fever", info.multiplier >= 2);
 }
 function applyComboScoreBonus(baseScore, streak) {
     const multiplier = getStreakComboMultiplier(streak);
@@ -1734,7 +1803,9 @@ function getHintForQuestion(question) {
 
 function useItem(id) {
     if (!canUseItem(id)) {
-        if (id === "lifeToken" && isQuizActive() && quizState.lives >= MAX_QUIZ_LIVES) {
+        if (id === "hint" && getActiveLevelModifier().blocksHint) {
+            showItemFeedback("🚫 HINTS ARE DISABLED ON THIS LEVEL.");
+        } else if (id === "lifeToken" && isQuizActive() && quizState.lives >= MAX_QUIZ_LIVES) {
             showItemFeedback("Lives already full.");
         } else {
             showItemFeedback("Item cannot be used now.");
@@ -1807,6 +1878,7 @@ function useItem(id) {
     }
 
     consumeItem(id);
+    quizState.levelItemsUsed = safeNonNegativeInt(quizState.levelItemsUsed, 0) + 1;
     updateQuizDisplay();
     saveGlobalGameData();
     showItemFeedback(successFeedback);
@@ -1924,6 +1996,44 @@ const REVIEWER_SESSION_SIZE = 10;
 
 function isReviewerActive() {
     return quizState?.mode === "reviewer";
+}
+
+function isVaultDrillActive() {
+    return quizState?.mode === "vault";
+}
+
+/* Reviewer and the Mistake Vault drill both answer without affecting progression. */
+function isPracticeMode() {
+    return isReviewerActive() || isVaultDrillActive();
+}
+
+/* The combo meter only makes sense in scoring modes. */
+function isPracticeOnlyMode() {
+    return isPracticeMode();
+}
+
+function getActiveLevelModifier() {
+    const modifier = quizState?.modifier;
+    if (!modifier || typeof modifier !== "object") return { id: "NONE", label: "", icon: "", description: "", coinMultiplier: 1, timerDelta: 0, blocksHint: false, hidesChoice: false, suddenDeath: false };
+    return modifier;
+}
+
+/*
+ * SUDDEN DEATH ends the run on the first finalized wrong answer. A Second Chance
+ * retry is not finalized yet, so it does not trigger the modifier by itself.
+ */
+function applySuddenDeathIfActive() {
+    if (!getActiveLevelModifier().suddenDeath) return false;
+    if (quizState.lives > 0) {
+        quizState.lives = 0;
+        showStreakFeedback("☠️ SUDDEN DEATH\nOne mistake ends the run.", 2200, "broken");
+    }
+    return true;
+}
+
+function modifierCoinMultiplier() {
+    const value = Number(getActiveLevelModifier().coinMultiplier);
+    return Number.isFinite(value) && value >= 1 ? value : 1;
 }
 
 function getQuestionBankForQuestioner(questioner) {
@@ -2046,6 +2156,7 @@ function startReviewerMode() {
     }
 
     const questions = shuffleArray(pool).slice(0, REVIEWER_SESSION_SIZE);
+    stopQuizTimer();
     quizState = {
         subject,
         quizType: "REVIEWER",
@@ -2320,6 +2431,7 @@ function startDailyChallenge() {
     }
     state.attempts += 1;
     saveDailyChallengeState(state);
+    stopQuizTimer();
     quizState = {
         subject: "",
         quizType: "DAILY CHALLENGE",
@@ -2331,7 +2443,7 @@ function startDailyChallenge() {
         lives: 8,
         selected: false,
         currentCorrect: "",
-        timer: 30,
+        timer: DEFAULT_QUESTION_SECONDS,
         timerId: null,
         startedAt: Date.now(),
         bestCompleted: 0,
@@ -2339,6 +2451,7 @@ function startDailyChallenge() {
         bestStreak: 0,
         streakMilestonesRewarded: [],
         levelHadWrongAnswer: false,
+        levelItemsUsed: 0,
         questionStartedAt: 0,
         usedQuestionIds: [],
         mode: "daily",
@@ -2709,6 +2822,185 @@ function clearUsedQuestionIds(subject, quizType) {
     localStorage.removeItem(quizUsedQuestionsKey(subject, quizType));
 }
 
+/* ========================================
+   MISTAKE VAULT — practice the questions
+   that were answered incorrectly.
+======================================== */
+const MISTAKE_VAULT_KEY = "proudGeonQuizMistakeVaultV1";
+const PERFECT_LEVELS_KEY = "proudGeonQuizPerfectLevelsV1";
+
+function mistakeVaultStorageKey() {
+    return getActiveQuestioner() === "new" ? `${MISTAKE_VAULT_KEY}:new` : MISTAKE_VAULT_KEY;
+}
+
+function perfectLevelsStorageKey() {
+    return getActiveQuestioner() === "new" ? `${PERFECT_LEVELS_KEY}:new` : PERFECT_LEVELS_KEY;
+}
+
+function vaultHelpers() {
+    return window.GeonMistakeVault || null;
+}
+
+function loadMistakeVault() {
+    const helpers = vaultHelpers();
+    try {
+        const raw = JSON.parse(localStorage.getItem(mistakeVaultStorageKey()) || "[]");
+        return helpers ? helpers.sanitizeVault(raw) : [];
+    } catch (error) {
+        return [];
+    }
+}
+
+function saveMistakeVault(entries) {
+    const helpers = vaultHelpers();
+    const clean = helpers ? helpers.sanitizeVault(entries) : [];
+    try {
+        localStorage.setItem(mistakeVaultStorageKey(), JSON.stringify(clean));
+    } catch (error) {
+        console.warn("Could not save the Mistake Vault safely.", error);
+    }
+    renderMistakeVaultHome();
+    return clean;
+}
+
+function recordMistakeInVault(question) {
+    const helpers = vaultHelpers();
+    if (!helpers || !question?.id) return;
+    saveMistakeVault(helpers.addMistake(loadMistakeVault(), question, Date.now()));
+}
+
+function recordVaultDrillResult(questionId, correct) {
+    const helpers = vaultHelpers();
+    if (!helpers || !questionId) return;
+    const result = helpers.recordResult(loadMistakeVault(), questionId, correct, Date.now());
+    saveMistakeVault(result.entries);
+    if (result.cleared) showStreakFeedback("🧰 MISTAKE VAULT CLEARED\nEvery stored question is mastered!", 2200, "combo");
+    else if (result.retired) showStreakFeedback("✅ MISTAKE CLEARED\nThat question left the vault.", 1500, "combo");
+}
+
+function getPerfectLevelCount() {
+    const raw = Math.floor(Number(localStorage.getItem(perfectLevelsStorageKey())));
+    return Number.isFinite(raw) && raw > 0 ? raw : 0;
+}
+
+function addPerfectLevel() {
+    const next = getPerfectLevelCount() + 1;
+    try {
+        localStorage.setItem(perfectLevelsStorageKey(), String(next));
+    } catch (error) {
+        console.warn("Could not save the perfect level count safely.", error);
+    }
+    return next;
+}
+
+/* Home card status. The card stays disabled until something is stored. */
+function renderMistakeVaultHome() {
+    const card = document.getElementById("mistakeVaultCard");
+    const status = document.getElementById("mistakeVaultHomeStatus");
+    if (!card && !status) return;
+    const summary = vaultHelpers() ? vaultHelpers().summarize(loadMistakeVault()) : { total: 0, drillable: 0 };
+    const perfect = getPerfectLevelCount();
+    if (status) {
+        status.textContent = summary.total
+            ? `${summary.total} TO CLEAR • DRILL ${summary.drillable}`
+            : `NOTHING TO CLEAR • ${perfect} PERFECT LEVEL${perfect === 1 ? "" : "S"}`;
+    }
+    if (card) {
+        card.disabled = summary.total === 0;
+        card.classList.toggle("is-empty", summary.total === 0);
+        card.setAttribute("aria-label", summary.total
+            ? `Open the Mistake Vault, ${summary.total} questions to clear`
+            : "Mistake Vault is empty, there is nothing to review");
+    }
+}
+
+function findBankQuestionById(questioner, id) {
+    const bank = getQuestionBankForQuestioner(questioner);
+    const wanted = String(id);
+    for (const subject of Object.keys(bank || {})) {
+        for (const quizType of QUIZ_TYPES) {
+            const rows = bank[subject]?.[quizType] || [];
+            const found = rows.find(question => String(question.id) === wanted);
+            if (found) return { ...found };
+        }
+    }
+    return null;
+}
+
+function startMistakeVaultDrill() {
+    const helpers = vaultHelpers();
+    if (!helpers) return;
+    const questioner = getActiveQuestioner();
+    const entries = helpers.pickForDrill(loadMistakeVault(), helpers.DRILL_SIZE);
+    const questions = entries
+        .map(entry => findBankQuestionById(questioner, entry.id))
+        .filter(Boolean);
+
+    if (!questions.length) {
+        saveMistakeVault([]);
+        showItemFeedback("Nothing to review yet. Wrong answers appear here automatically.");
+        return;
+    }
+
+    stopQuizTimer();
+    quizState = {
+        subject: questions[0].subject || "",
+        quizType: "VAULT",
+        questions,
+        index: 0,
+        score: 0,
+        coins: Number(gameData.coins || 0),
+        points: Number(gameData.points || 0),
+        lives: MAX_QUIZ_LIVES,
+        selected: false,
+        currentCorrect: "",
+        timer: 0,
+        timerId: null,
+        startedAt: Date.now(),
+        bestCompleted: 0,
+        streak: 0,
+        bestStreak: 0,
+        streakMilestonesRewarded: [],
+        levelHadWrongAnswer: false,
+        levelItemsUsed: 0,
+        questionStartedAt: 0,
+        usedQuestionIds: [],
+        modifier: { id: "NONE", label: "", icon: "", description: "", coinMultiplier: 1, timerDelta: 0, blocksHint: false, hidesChoice: false, suddenDeath: false },
+        itemState: { fiftyFiftyUsed: false, secondChanceUsed: false, hintUsed: false, awaitingSecondChance: false },
+        mode: "vault",
+        vaultQuestioner: questioner
+    };
+
+    const quizScreen = document.getElementById("quizScreen");
+    if (quizScreen) {
+        quizScreen.classList.add("show");
+        quizScreen.setAttribute("aria-hidden", "false");
+    }
+    document.body.classList.add("quiz-active", "vault-active");
+    document.body.classList.remove("combo-fever");
+    aiReaderStop();
+    stopHomeMusic();
+    stopMottoMusic();
+    stopVictoryMusic();
+    stopQuizTimer();
+    renderCurrentQuizQuestion();
+}
+
+function completeMistakeVaultDrill() {
+    if (!isVaultDrillActive()) return;
+    stopQuizTimer();
+    aiReaderStop();
+    const reviewed = Math.min(quizState.questions.length, Math.max(0, Number(quizState.index) || 0));
+    closeQuizVisualOnly();
+    document.body.classList.remove("vault-active", "combo-fever");
+    quizState.mode = "normal";
+    quizState.vaultQuestioner = "";
+    renderMistakeVaultHome();
+    updateHomeSubjectUnlocks();
+    showItemFeedback(`🧰 REVIEW COMPLETE\n${reviewed} QUESTION${reviewed === 1 ? "" : "S"} PRACTISED`);
+    startHomeMusic();
+}
+
 const SUBJECT_STATS_KEY = "proudGeonQuizSubjectStatsV1";
 
 function subjectStatsStorageKey() {
@@ -2847,6 +3139,7 @@ function continueJourney() {
 }
 
 function updateHomeSubjectUnlocks() {
+    renderMistakeVaultHome();
     const questionerIndicator = document.getElementById("homeQuestionerIndicator");
     if (questionerIndicator) {
         questionerIndicator.textContent = getActiveQuestioner() === "new" ? "QUESTIONER: NEW" : "QUESTIONER: PREVIOUS";
@@ -2915,11 +3208,33 @@ function stopQuizTimer() {
     }
 }
 
+/*
+ * Time limit per question: the difficulty band sets the base and a TIME RUSH
+ * modifier shortens it. Practice modes keep the default so nothing is punishing.
+ */
+function currentQuestionTimeLimit() {
+    const question = quizState?.questions?.[quizState.index];
+    const difficulty = String(question?.difficulty || "").toUpperCase();
+    const base = QUESTION_TIME_BY_DIFFICULTY[difficulty] || DEFAULT_QUESTION_SECONDS;
+    const delta = Number(getActiveLevelModifier().timerDelta) || 0;
+    return Math.max(12, Math.round(base + delta));
+}
+
 function startQuizTimer() {
     stopQuizTimer();
-    quizState.timer = 30;
+    const owner = quizState;
+    owner.timer = currentQuestionTimeLimit();
     updateQuizTimer();
-    quizState.timerId = setInterval(() => {
+    /*
+     * The interval only ticks while it is still the live timer of the session
+     * that created it. A session is replaced wholesale on a restart, so without
+     * this guard the old interval would keep counting the new session down.
+     */
+    const intervalId = setInterval(() => {
+        if (quizState !== owner || quizState.timerId !== intervalId) {
+            clearInterval(intervalId);
+            return;
+        }
         quizState.timer--;
         updateQuizTimer();
         if (quizState.timer <= 0) {
@@ -2927,11 +3242,33 @@ function startQuizTimer() {
             handleQuizAnswer(null, true);
         }
     }, 1000);
+    owner.timerId = intervalId;
 }
 
 function updateQuizTimer() {
     const el = document.getElementById("quizTimer");
-    if (el) el.textContent = Math.max(0, quizState.timer);
+    const seconds = Math.max(0, Number(quizState.timer) || 0);
+    if (el) el.textContent = seconds;
+    const holder = document.querySelector(".quiz-timer");
+    if (holder) {
+        holder.classList.toggle("timer-low", seconds > 0 && seconds <= 5);
+        holder.setAttribute("aria-label", `Time left: ${seconds} seconds`);
+    }
+}
+
+/*
+ * MYSTERY hides one wrong answer until the question is locked. The correct answer
+ * is never hidden, and practice modes keep all four choices.
+ */
+function applyChoiceModifier(buttons) {
+    if (!getActiveLevelModifier().hidesChoice || isPracticeMode() || isDailyChallengeActive()) return;
+    const candidates = (buttons || []).filter(button => button.dataset.answer !== quizState.currentCorrect);
+    if (!candidates.length) return;
+    const hidden = candidates[Math.floor(Math.random() * candidates.length)];
+    hidden.disabled = true;
+    hidden.classList.add("eliminated", "mystery");
+    hidden.textContent = "??? — HIDDEN BY MYSTERY";
+    hidden.setAttribute("aria-disabled", "true");
 }
 
 function prepareQuestion(question) {
@@ -2945,6 +3282,7 @@ function prepareQuestion(question) {
     quizState.currentCorrect = question.answer;
     quizState.selected = false;
     quizState.levelHadWrongAnswer = false;
+    quizState.levelItemsUsed = 0;
     quizState.questionStartedAt = Date.now();
     resetPerQuestionItemState();
 
@@ -2963,11 +3301,13 @@ function prepareQuestion(question) {
 
     buttons.forEach((button, i) => {
         button.disabled = false;
-        button.classList.remove("selected", "correct", "wrong");
+        button.classList.remove("selected", "correct", "wrong", "eliminated", "mystery");
         button.textContent = `${String.fromCharCode(65 + i)}. ${choices[i]}`;
         button.dataset.answer = choices[i];
         button.onclick = () => handleQuizAnswer(choices[i], false, button);
     });
+
+    applyChoiceModifier(buttons);
 
     if (next) {
         next.disabled = true;
@@ -2999,14 +3339,33 @@ function updateQuizDisplay() {
     if (levelEl) levelEl.textContent = level;
     if (qNumEl) qNumEl.textContent = level;
     const totalEl = document.getElementById("quizQuestionTotal");
-    if (totalEl) totalEl.textContent = isReviewerActive() ? quizState.questions.length : (isDailyChallengeActive() ? DAILY_CHALLENGE_SIZE : 80);
-    if (levelEl) levelEl.textContent = isReviewerActive() ? "REVIEW" : (isDailyChallengeActive() ? `DAILY ${level}` : level);
+    if (totalEl) totalEl.textContent = isPracticeMode() ? quizState.questions.length : (isDailyChallengeActive() ? DAILY_CHALLENGE_SIZE : 80);
+    if (levelEl) levelEl.textContent = isReviewerActive()
+        ? "REVIEW"
+        : (isVaultDrillActive() ? `PRACTICE ${level}` : (isDailyChallengeActive() ? `DAILY ${level}` : level));
     if (coins) coins.textContent = quizState.coins;
     if (score) score.textContent = quizState.score;
     if (points) points.textContent = quizState.points;
     if (lives) lives.textContent = quizState.lives;
     updateStreakDisplay(false);
     renderQuizItemBar();
+    renderQuizModifierBadge();
+}
+
+function renderQuizModifierBadge() {
+    const badge = document.getElementById("quizModifierBadge");
+    if (!badge) return;
+    const modifier = getActiveLevelModifier();
+    const active = modifier.id !== "NONE" && !isPracticeMode() && !isDailyChallengeActive();
+    badge.hidden = !active;
+    if (!active) {
+        badge.textContent = "";
+        badge.removeAttribute("title");
+        return;
+    }
+    badge.textContent = `${modifier.icon} ${modifier.label}`;
+    badge.title = modifier.description;
+    badge.setAttribute("aria-label", `Level modifier: ${modifier.label}. ${modifier.description}`);
 }
 
 function playGame(subject) {
@@ -3053,6 +3412,7 @@ function startQuizAtSelectedLevel(box, selectedLevel) {
     selectedSubject = subject;
     levelSelectionSelectedLevel = safeSelectedLevel;
 
+    stopQuizTimer();
     quizState = {
         subject,
         quizType,
@@ -3072,13 +3432,16 @@ function startQuizAtSelectedLevel(box, selectedLevel) {
         bestStreak: 0,
         streakMilestonesRewarded: [],
         levelHadWrongAnswer: false,
+        levelItemsUsed: 0,
         questionStartedAt: 0,
         usedQuestionIds,
+        modifier: levelModifierFor(subject, quizType, safeSelectedLevel),
         itemState: {
             fiftyFiftyUsed: false,
             secondChanceUsed: false,
             hintUsed: false
-        }
+        },
+        mode: "normal"
     };
 
     const levelPanel = document.getElementById("levelSelection");
@@ -3104,11 +3467,29 @@ function startQuizAtSelectedLevel(box, selectedLevel) {
 
     gameData.gamesPlayed = Number(gameData.gamesPlayed || 0) + 1;
     saveGlobalGameData();
+
+    const modifierNote = window.GeonLevelModifiers?.describeModifier
+        ? window.GeonLevelModifiers.describeModifier(quizState.modifier)
+        : "";
+    if (modifierNote) showStreakFeedback(modifierNote, 2400, "modifier");
+
     renderCurrentQuizQuestion();
+}
+
+/* The twist for a level is derived from the level itself, so it never changes. */
+function levelModifierFor(subject, quizType, level) {
+    const fallback = { id: "NONE", label: "", icon: "", description: "", coinMultiplier: 1, timerDelta: 0, blocksHint: false, hidesChoice: false, suddenDeath: false };
+    return window.GeonLevelModifiers?.getLevelModifier
+        ? window.GeonLevelModifiers.getLevelModifier(subject, quizType, level, getActiveQuestioner())
+        : fallback;
 }
 
 function renderCurrentQuizQuestion() {
     if (!quizState.questions.length) return;
+    if (isVaultDrillActive() && quizState.index >= quizState.questions.length) {
+        completeMistakeVaultDrill();
+        return;
+    }
     if (isReviewerActive() && quizState.index >= quizState.questions.length) {
         completeReviewerMode();
         return;
@@ -3152,7 +3533,7 @@ function handleQuizAnswer(value, timedOut = false, button = null) {
         timedOut ? "⏱ TIME'S UP" : (correct ? "✓ CORRECT" : "✕ WRONG")
     );
 
-    if (isReviewerActive()) {
+    if (isPracticeMode()) {
         const currentQuestion = quizState.questions[quizState.index];
         if (button) button.classList.add(correct ? "correct" : "wrong");
         const explanation = currentQuestion?.explanation;
@@ -3184,6 +3565,20 @@ function handleQuizAnswer(value, timedOut = false, button = null) {
             next.disabled = false;
             next.textContent = quizState.index >= quizState.questions.length - 1 ? "VIEW RESULT" : "NEXT →";
         }
+        if (isVaultDrillActive()) {
+            /*
+             * The drill is practice: no coins, points, progress or titles. Only the
+             * stored mistake changes, and the combo stays on screen for feel.
+             */
+            recordVaultDrillResult(currentQuestion?.id, correct);
+            if (correct) {
+                quizState.streak = safeNonNegativeInt(quizState.streak, 0, 100000) + 1;
+                quizState.bestStreak = Math.max(safeNonNegativeInt(quizState.bestStreak, 0, 100000), quizState.streak);
+                updateStreakDisplay(true);
+            } else {
+                breakQuizStreak();
+            }
+        }
         aiReaderStop();
         if (aiReaderIsEnabled()) aiReaderSpeak(correct ? "Excellent." : "Incorrect.");
         return;
@@ -3202,12 +3597,25 @@ function handleQuizAnswer(value, timedOut = false, button = null) {
         const reward = getDifficultyReward(quizState.index + 1);
         const nextStreak = safeNonNegativeInt(quizState.streak, 0, 100000) + 1;
         const comboReward = applyComboScoreBonus(reward.score, nextStreak);
+        const currentQuestion = quizState.questions[quizState.index];
+        const difficulty = String(currentQuestion?.difficulty || "NORMAL").toUpperCase();
+        const elapsedSeconds = quizState.questionStartedAt
+            ? (Date.now() - quizState.questionStartedAt) / 1000
+            : Infinity;
+        const speedBonus = elapsedSeconds <= SPEED_BONUS_SECONDS
+            ? (SPEED_BONUS_COINS[difficulty] || 1)
+            : 0;
+        const coinMultiplier = modifierCoinMultiplier();
+        const earnedCoins = Math.max(0, Math.round((reward.coins + speedBonus) * coinMultiplier));
         quizState.score += comboReward.score;
-        quizState.coins += reward.coins;
+        quizState.coins += earnedCoins;
         quizState.points += reward.points;
         quizState.levelScoreEarned = safeNonNegativeInt(quizState.levelScoreEarned, 0) + comboReward.score;
-        quizState.levelCoinsEarned = safeNonNegativeInt(quizState.levelCoinsEarned, 0) + reward.coins;
+        quizState.levelCoinsEarned = safeNonNegativeInt(quizState.levelCoinsEarned, 0) + earnedCoins;
         quizState.levelPointsEarned = safeNonNegativeInt(quizState.levelPointsEarned, 0) + reward.points;
+        if (speedBonus) {
+            showStreakFeedback(`⚡ FAST ANSWER\n+${speedBonus * coinMultiplier} COINS`, 1200, "combo");
+        }
         registerCorrectStreakAnswer();
         checkSpecialAchievementOnCorrect();
         playAudioElement("correctSound");
@@ -3233,6 +3641,10 @@ function handleQuizAnswer(value, timedOut = false, button = null) {
             quizState.itemState.awaitingSecondChance = false;
             breakQuizStreak();
             quizState.lives -= 1;
+            if (!isDailyChallengeActive()) {
+                recordMistakeInVault(quizState.questions[quizState.index]);
+            }
+            applySuddenDeathIfActive();
         }
     }
 
@@ -3294,7 +3706,7 @@ function handleQuizAnswer(value, timedOut = false, button = null) {
 function nextQuizStep() {
     if (!quizState.selected) return;
 
-    if (isReviewerActive()) {
+    if (isPracticeMode()) {
         const explanationEl = document.getElementById("reviewerExplanation");
         if (explanationEl) {
             explanationEl.classList.remove("show");
@@ -3316,6 +3728,10 @@ function nextQuizStep() {
         recordSubjectAnswerStat(quizState.subject, false);
         breakQuizStreak();
         quizState.lives -= 1;
+        if (!isDailyChallengeActive()) {
+            recordMistakeInVault(quizState.questions[quizState.index]);
+        }
+        applySuddenDeathIfActive();
         if (quizState.lives <= 0) {
             saveGlobalGameData();
             showGameOverScreen();
@@ -3343,6 +3759,19 @@ function nextQuizStep() {
 
     setQuizProgress(quizState.subject, quizState.quizType, Math.max(getQuizProgress(quizState.subject, quizState.quizType), levelCompleted));
     recordQuizLevelCompleted(quizState.subject, quizState.quizType, levelCompleted);
+
+    if (!quizState.levelHadWrongAnswer && safeNonNegativeInt(quizState.levelItemsUsed, 0) === 0) {
+        /*
+         * Perfect level: no wrong answer and no item used. Coins respect the
+         * DOUBLE COINS modifier because the whole level paid double.
+         */
+        const perfectCoins = Math.round(PERFECT_LEVEL_COINS * modifierCoinMultiplier());
+        quizState.coins += perfectCoins;
+        quizState.points += PERFECT_LEVEL_POINTS;
+        quizState.score += PERFECT_LEVEL_SCORE;
+        addPerfectLevel();
+        showStreakFeedback(`🏅 PERFECT LEVEL\n+${perfectCoins} COINS • +${PERFECT_LEVEL_POINTS} POINTS`, 1800, "combo");
+    }
 
     if (quizState.lives <= 0) {
         showGameOverScreen();
@@ -3621,6 +4050,10 @@ function closeQuizScreen() {
         exitReviewerModeToPanel();
         return;
     }
+    if (isVaultDrillActive()) {
+        completeMistakeVaultDrill();
+        return;
+    }
     const confirm=document.getElementById("quizBackConfirm");
     if(confirm){confirm.classList.add("show");confirm.setAttribute("aria-hidden","false");}
 }
@@ -3636,6 +4069,10 @@ function confirmQuizBack(destination) {
     const leavingReviewer = isReviewerActive();
     if (leavingReviewer) {
         exitReviewerModeToPanel();
+        return;
+    }
+    if (isVaultDrillActive()) {
+        completeMistakeVaultDrill();
         return;
     }
     stopQuizTimer();

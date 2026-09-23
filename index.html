@@ -305,6 +305,9 @@
 </div>
 
 
+        <!-- LEVEL TWIST BADGE -->
+        <div class="quiz-modifier" id="quizModifierBadge" hidden></div>
+
         <!-- PLAYER STATUS -->
         <div class="quiz-status">
 
@@ -348,6 +351,12 @@
             <div class="quiz-streak" data-streak="0" aria-label="Current streak: 0">
                 🔥 <span id="quizStreak">0</span>
             </div>
+        </div>
+
+        <!-- COMBO METER -->
+        <div class="quiz-combo" id="quizComboMeter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Combo multiplier">
+            <span class="quiz-combo-track" aria-hidden="true"><span class="quiz-combo-fill" id="quizComboFill"></span></span>
+            <span class="quiz-combo-label" id="quizComboLabel">COMBO ×1</span>
         </div>
 
 
@@ -891,6 +900,18 @@
             <small id="dailyChallengeHomeStatus">10 QUESTIONS • DAILY REPLAY</small>
         </span>
         <span class="daily-challenge-arrow">→</span>
+    </button>
+
+    <!-- =================================
+         MISTAKE VAULT — PRACTICE WRONG ANSWERS
+    ================================== -->
+    <button type="button" id="mistakeVaultCard" class="mistake-vault-card is-empty" onclick="startMistakeVaultDrill()" aria-label="Open the Mistake Vault" disabled>
+        <span class="mistake-vault-icon" aria-hidden="true">🧰</span>
+        <span class="mistake-vault-copy">
+            <strong>MISTAKE VAULT</strong>
+            <small id="mistakeVaultHomeStatus">NOTHING TO CLEAR</small>
+        </span>
+        <span class="mistake-vault-arrow" aria-hidden="true">→</span>
     </button>
 
     <!-- =================================
@@ -1745,6 +1766,8 @@
 <script src="src/state/storage.js"></script>
 <script src="src/data/questionValidator.js"></script>
 <script src="src/quiz/scoring.js"></script>
+<script src="src/quiz/levelModifiers.js"></script>
+<script src="src/quiz/mistakeVault.js"></script>
 <script src="src/progression/streaks.js"></script>
 <script src="src/data/dailyChallenge.js"></script>
 <script src="src/audio/audioManager.js"></script>
