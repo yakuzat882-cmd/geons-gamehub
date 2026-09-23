@@ -10678,3 +10678,112 @@ body.vault-active .quiz-item-bar { display: none !important; }
   .quiz-timer.timer-low { animation: none; }
   body.combo-fever .quiz-screen-box { transition: none; }
 }
+
+/* =========================================================
+   ARCADE MODES
+   Home cards and the run-result panel. Token-based so the
+   three themes keep working.
+========================================================= */
+
+.arcade-card {
+  width: 100%;
+  margin: 14px 0 0;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  border: 2px solid var(--success);
+  border-radius: var(--radius-card);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.arcade-card.arcade-blitz { border-color: var(--warning); }
+.arcade-card:active { transform: scale(.99); }
+.arcade-icon { font-size: 28px; line-height: 1; }
+.arcade-copy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 3px; }
+.arcade-copy strong { font-size: 14px; letter-spacing: .5px; }
+.arcade-copy small { font-size: 10px; opacity: .78; }
+.arcade-arrow { font-size: 22px; font-weight: 800; }
+
+.arcade-result-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 10050;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, .68);
+}
+.arcade-result-panel.show { display: flex; }
+.arcade-result-box {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 22px 18px;
+  text-align: center;
+  border: 2px solid var(--warning);
+  border-radius: var(--radius-card);
+  background: var(--surface-0);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-card);
+}
+.arcade-result-kicker {
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 1.2px;
+  color: var(--text-muted);
+}
+.arcade-result-box h2 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: 1px;
+}
+.arcade-result-score {
+  font-size: 52px;
+  font-weight: 900;
+  color: var(--warning);
+  line-height: 1.05;
+}
+.arcade-result-streak {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .6px;
+  color: var(--text-secondary);
+}
+.arcade-result-rank {
+  min-height: 18px;
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--accent-2);
+}
+.arcade-result-action {
+  width: 100%;
+  max-width: 260px;
+  min-height: 44px;
+  border: 2px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: .6px;
+  cursor: pointer;
+}
+.arcade-result-action:active { transform: scale(.98); }
+.arcade-result-home { border-color: var(--border); }
+
+/* No item bar and no economy row inside a pure arcade run. */
+body.arcade-active .quiz-item-bar,
+body.arcade-active .quiz-status { display: none !important; }
+
+@media (max-width: 375px) {
+  .arcade-copy strong { font-size: 13px; }
+  .arcade-icon { font-size: 24px; }
+  .arcade-result-score { font-size: 44px; }
+}

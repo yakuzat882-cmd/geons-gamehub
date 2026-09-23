@@ -383,6 +383,22 @@
 
 
 <!-- =================================
+     ARCADE MODE — RUN RESULT
+================================== -->
+<div id="arcadeResultPanel" class="arcade-result-panel" role="dialog" aria-modal="true"
+     aria-labelledby="arcadeResultTitle" aria-hidden="true">
+    <div class="arcade-result-box">
+        <span class="arcade-result-kicker" id="arcadeResultMeta">RUN COMPLETE</span>
+        <h2 id="arcadeResultTitle">SURVIVAL GAUNTLET</h2>
+        <div class="arcade-result-score" id="arcadeResultScore">0</div>
+        <span class="arcade-result-streak" id="arcadeResultStreak">BEST STREAK 0</span>
+        <span class="arcade-result-rank" id="arcadeResultRank">KEEP PLAYING TO REACH THE BOARD</span>
+        <button type="button" class="arcade-result-action" onclick="replayArcadeMode()">PLAY AGAIN</button>
+        <button type="button" class="arcade-result-action arcade-result-home" onclick="closeArcadeResult()">← HOME</button>
+    </div>
+</div>
+
+<!-- =================================
      STORY QUIZ — STORY SELECTION
 ================================== -->
 <div id="storySelectionPanel" class="story-quiz-panel" role="dialog" aria-modal="true"
@@ -912,6 +928,27 @@
             <small id="mistakeVaultHomeStatus">NOTHING TO CLEAR</small>
         </span>
         <span class="mistake-vault-arrow" aria-hidden="true">→</span>
+    </button>
+
+    <!-- =================================
+         ARCADE — SURVIVAL GAUNTLET + TIMED BLITZ
+    ================================== -->
+    <button type="button" id="arcadeSurvivalCard" class="arcade-card arcade-survival" onclick="startSurvivalRun()" aria-label="Start a Survival Gauntlet run">
+        <span class="arcade-icon" aria-hidden="true">❤️</span>
+        <span class="arcade-copy">
+            <strong>SURVIVAL GAUNTLET</strong>
+            <small id="survivalHomeStatus">ONE LIFE • ENDLESS</small>
+        </span>
+        <span class="arcade-arrow" aria-hidden="true">→</span>
+    </button>
+
+    <button type="button" id="arcadeBlitzCard" class="arcade-card arcade-blitz" onclick="startBlitzRun()" aria-label="Start a Timed Blitz run">
+        <span class="arcade-icon" aria-hidden="true">⚡</span>
+        <span class="arcade-copy">
+            <strong>TIMED BLITZ</strong>
+            <small id="blitzHomeStatus">60 SECONDS • +2/-3</small>
+        </span>
+        <span class="arcade-arrow" aria-hidden="true">→</span>
     </button>
 
     <!-- =================================
@@ -1768,6 +1805,7 @@
 <script src="src/quiz/scoring.js"></script>
 <script src="src/quiz/levelModifiers.js"></script>
 <script src="src/quiz/mistakeVault.js"></script>
+<script src="src/quiz/arcadeRanks.js"></script>
 <script src="src/progression/streaks.js"></script>
 <script src="src/data/dailyChallenge.js"></script>
 <script src="src/audio/audioManager.js"></script>

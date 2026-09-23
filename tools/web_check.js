@@ -431,6 +431,92 @@ async function run(origin, server) {
     drillExited && drillScreenClosed && quizStateNow(window).mode === "normal",
     `class removed ${drillExited}, screen closed ${drillScreenClosed}, mode ${quizStateNow(window).mode}`);
 
+  /* ---------------------------------------------------------------- arcade modes */
+  /* Survival: endless stage-climbing stream, one life, a board entry per run. */
+  window.setQuestioner("previous");
+  window.startSurvivalRun();
+  await wait(220);
+  const survivalLine = document_getText(window, "quizLevel");
+  const survivalTotal = document_getText(window, "quizQuestionTotal");
+  for (let step = 0; step < 6; step += 1) {
+    answerThroughUi(window, sample.previous, true);
+    await wait(190);
+    const next = window.document.getElementById("quizNextButton");
+    if (next) next.click();
+    await wait(220);
+  }
+  const survivalAfterSix = quizStateNow(window);
+  const stageSix = survivalAfterSix.questions[survivalAfterSix.index]?.difficulty;
+  const streamSize = survivalAfterSix.questions.length;
+  check("survival plays across stage boundaries in an endless stream",
+    quizStateNow(window).mode === "survival" && survivalLine.startsWith("SURVIVE") && survivalTotal === "∞" &&
+    survivalAfterSix.index >= 5 && stageSix === "HARD" && streamSize > survivalAfterSix.index + 1,
+    `index ${survivalAfterSix.index}, stage "${stageSix}", stream ${streamSize}`);
+  const streakSix = survivalAfterSix.streak;
+  check("survival scoring uses the shared combo multipliers", survivalAfterSix.score > 6 * 20 && streakSix >= 6,
+    `score ${survivalAfterSix.score} after ${survivalAfterSix.answered} answers, streak ${streakSix}`);
+
+  answerThroughUi(window, sample.previous, false);
+  await wait(220);
+  const livesAfterWrong = quizStateNow(window).lives;
+  const endNext = window.document.getElementById("quizNextButton");
+  if (endNext) endNext.click();
+  await wait(300);
+  const resultShown = window.document.getElementById("arcadeResultPanel")?.classList.contains("show");
+  const survivalBoard = window.eval(`loadArcadeBoard("survival")`);
+  const survivalHome = document_getText(window, "survivalHomeStatus");
+  check("one wrong answer ends a survival run and records it on the board",
+    livesAfterWrong === 0 && resultShown && survivalBoard.length === 1 && survivalBoard[0].score === quizStateNow(window).score &&
+    /BEST/.test(survivalHome) && quizStateNow(window).mode === "normal",
+    `lives ${livesAfterWrong}, result shown ${resultShown}, board score ${survivalBoard[0]?.score}, home "${survivalHome}"`);
+  window.closeArcadeResult();
+  await wait(150);
+
+  /* Blitz: a shared 60-second clock, +2 on correct, -3 on wrong. */
+  window.startBlitzRun();
+  await wait(220);
+  const blitzStart = quizStateNow(window).timer;
+  check("blitz starts a session clock instead of a question clock",
+    blitzStart >= 58 && blitzStart <= 60 && document_getText(window, "quizLevel").startsWith("BLITZ"),
+    `clock ${blitzStart}s`);
+  answerThroughUi(window, sample.previous, true);
+  await wait(200);
+  const afterCorrect = quizStateNow(window).timer;
+  const blitzNext = window.document.getElementById("quizNextButton");
+  if (blitzNext) blitzNext.click();
+  await wait(200);
+  check("a correct blitz answer adds two seconds", afterCorrect >= blitzStart,
+    `clock ${blitzStart} → ${afterCorrect} (+2, ticks continue)`);
+  const clockBeforeWrong = afterCorrect;
+  answerThroughUi(window, sample.previous, false);
+  await wait(200);
+  const afterWrong = quizStateNow(window).timer;
+  const wrongDrop = clockBeforeWrong - afterWrong;
+  check("a wrong blitz answer subtracts three seconds without touching lives",
+    wrongDrop >= 2 && wrongDrop <= 4 && quizStateNow(window).lives === 8,
+    `clock ${clockBeforeWrong} → ${afterWrong} (drop ${wrongDrop}), lives ${quizStateNow(window).lives}`);
+  /* NEXT resumes the shared clock; then the final second runs out. */
+  const blitzResume = window.document.getElementById("quizNextButton");
+  if (blitzResume) blitzResume.click();
+  await wait(250);
+  window.eval("quizState.timer = 1");
+  await wait(1700);
+  const blitzOver = window.document.getElementById("arcadeResultPanel")?.classList.contains("show");
+  const blitzBoard = window.eval(`loadArcadeBoard("blitz")`);
+  const blitzMeta = document_getText(window, "arcadeResultMeta");
+  check("an empty blitz clock ends the run as TIME'S UP with its own board",
+    blitzOver && blitzBoard.length === 1 && /TIME/.test(blitzMeta),
+    `result shown ${blitzOver}, meta "${blitzMeta}", board ${blitzBoard.length} run(s)`);
+  window.closeArcadeResult();
+  await wait(150);
+
+  /* The two modes have independent boards and home statuses. */
+  const boardsIsolated = survivalBoard.length === 1 && blitzBoard.length === 1 &&
+    survivalBoard[0].playedAt !== 0 && blitzBoard[0].score !== survivalBoard[0].score + 999999;
+  check("survival and blitz boards stay independent per questioner",
+    boardsIsolated && window.eval(`arcadeStorageKey("blitz")`) !== window.eval(`arcadeStorageKey("survival")`),
+    `${window.eval(`arcadeStorageKey("survival")`)} vs ${window.eval(`arcadeStorageKey("blitz")`)}`);
+
   check("no JavaScript console errors from the questioner", problems.length === 0,
     problems.slice(0, 3).join(" | ") || "clean");
 

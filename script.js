@@ -3001,6 +3001,281 @@ function completeMistakeVaultDrill() {
     startHomeMusic();
 }
 
+/* ========================================
+   ARCADE MODES — SURVIVAL GAUNTLET + TIMED BLITZ
+   One board per mode, per questioner. Survival has a single life
+   and an endless stream whose difficulty climbs every five questions.
+   Blitz is a shared sixty-second clock: +2s per correct, -3s per wrong.
+======================================== */
+const ARCADE_KEY = "proudGeonQuizArcadeV1";
+
+function isArcadeActive() {
+    return quizState?.mode === "survival" || quizState?.mode === "blitz";
+}
+
+function arcadeHelpers() {
+    return window.GeonArcade || null;
+}
+
+function arcadeStorageKey(mode) {
+    return getActiveQuestioner() === "new"
+        ? `${ARCADE_KEY}:${mode}:new`
+        : `${ARCADE_KEY}:${mode}`;
+}
+
+function loadArcadeBoard(mode) {
+    const helpers = arcadeHelpers();
+    try {
+        const raw = JSON.parse(localStorage.getItem(arcadeStorageKey(mode)) || "[]");
+        return helpers ? helpers.sanitizeBoard(raw) : [];
+    } catch (error) {
+        return [];
+    }
+}
+
+function saveArcadeBoard(mode, board) {
+    const helpers = arcadeHelpers();
+    try {
+        localStorage.setItem(arcadeStorageKey(mode), JSON.stringify(helpers ? helpers.sanitizeBoard(board) : []));
+    } catch (error) {
+        console.warn("Could not save the arcade board safely.", error);
+    }
+    renderArcadeHome();
+}
+
+/*
+ * The stream is endless: the pool is rebuilt per stage from every subject of the
+ * active questioner, then extended whenever the run approaches the end.
+ */
+function buildArcadeQuestions(difficulty, amount) {
+    const bank = getActiveQuestionBank();
+    const wanted = String(difficulty || "").toUpperCase();
+    const pool = SUBJECT_KEYS.flatMap(subject =>
+        QUIZ_TYPES.flatMap(quizType =>
+            (bank[subject]?.[quizType] || []).filter(question =>
+                String(question.difficulty || "").toUpperCase() === wanted)
+        )
+    );
+    if (!pool.length) return [];
+    return shuffleArray([...pool]).slice(0, amount);
+}
+
+function extendArcadeStreamIfNeeded() {
+    if (!isArcadeActive()) return;
+    const helpers = arcadeHelpers();
+    const remaining = quizState.questions.length - quizState.index;
+    if (remaining >= 6 || !helpers) return;
+    const stage = quizState.mode === "survival"
+        ? helpers.stageForQuestion(quizState.questions.length)
+        : helpers.STAGES[Math.floor(Math.random() * helpers.STAGES.length)];
+    const next = buildArcadeQuestions(stage, 12);
+    if (next.length) quizState.questions = [...quizState.questions, ...next];
+}
+
+function startSurvivalRun() {
+    if (!arcadeHelpers()) return;
+    const questions = [
+        ...buildArcadeQuestions("NORMAL", 6),
+        ...buildArcadeQuestions("HARD", 6)
+    ];
+    if (!questions.length) {
+        showItemFeedback("The question bank is still loading. Try again in a moment.");
+        return;
+    }
+    startArcadeSession("survival", questions);
+}
+
+function startBlitzRun() {
+    const helpers = arcadeHelpers();
+    if (!helpers) return;
+    const questions = helpers.STAGES
+        .flatMap(stage => buildArcadeQuestions(stage, 12))
+        .filter(Boolean);
+    const stream = shuffleArray(questions);
+    if (!stream.length) {
+        showItemFeedback("The question bank is still loading. Try again in a moment.");
+        return;
+    }
+    startArcadeSession("blitz", stream);
+}
+
+function startArcadeSession(mode, questions) {
+    stopQuizTimer();
+    quizState = {
+        subject: "",
+        quizType: mode.toUpperCase(),
+        questions,
+        index: 0,
+        score: 0,
+        answered: 0,
+        coins: Number(gameData.coins || 0),
+        points: Number(gameData.points || 0),
+        lives: mode === "survival" ? 1 : MAX_QUIZ_LIVES,
+        selected: false,
+        currentCorrect: "",
+        timer: mode === "blitz" ? arcadeHelpers().BLITZ_SECONDS : 0,
+        timerId: null,
+        startedAt: Date.now(),
+        bestCompleted: 0,
+        streak: 0,
+        bestStreak: 0,
+        streakMilestonesRewarded: [],
+        levelHadWrongAnswer: true,
+        levelItemsUsed: 0,
+        questionStartedAt: 0,
+        usedQuestionIds: [],
+        modifier: { id: "NONE", label: "", icon: "", description: "", coinMultiplier: 1, timerDelta: 0, blocksHint: false, hidesChoice: false, suddenDeath: false },
+        itemState: { fiftyFiftyUsed: false, secondChanceUsed: false, hintUsed: false, awaitingSecondChance: false },
+        mode,
+        arcadeQuestioner: getActiveQuestioner()
+    };
+
+    const quizScreen = document.getElementById("quizScreen");
+    if (quizScreen) {
+        quizScreen.classList.add("show");
+        quizScreen.setAttribute("aria-hidden", "false");
+    }
+    document.body.classList.add("quiz-active", "arcade-active", `${mode}-active`);
+    document.body.classList.remove("combo-fever");
+    aiReaderStop();
+    stopHomeMusic();
+    stopMottoMusic();
+    stopVictoryMusic();
+    startGameMusic();
+    renderCurrentQuizQuestion();
+}
+
+/* The blitz clock is a session clock with the same ownership guard as the quiz timer. */
+function startArcadeTimer() {
+    stopQuizTimer();
+    const owner = quizState;
+    const limit = arcadeHelpers()?.BLITZ_SECONDS || 60;
+    owner.timer = safeNonNegativeInt(owner.timer, 0) || limit;
+    updateQuizTimer();
+    const intervalId = setInterval(() => {
+        if (quizState !== owner || quizState.timerId !== intervalId) {
+            clearInterval(intervalId);
+            return;
+        }
+        quizState.timer--;
+        updateQuizTimer();
+        if (quizState.timer <= 0) {
+            stopQuizTimer();
+            finishArcadeRun(true);
+        }
+    }, 1000);
+    owner.timerId = intervalId;
+}
+
+function handleArcadeAnswer(correct, timedOut) {
+    const helpers = arcadeHelpers();
+    const question = quizState.questions[quizState.index];
+    quizState.answered = safeNonNegativeInt(quizState.answered, 0) + 1;
+
+    if (correct) {
+        const nextStreak = safeNonNegativeInt(quizState.streak, 0, 100000) + 1;
+        const multiplier = getStreakComboMultiplier(nextStreak);
+        quizState.score += helpers ? helpers.scoreForDifficulty(question?.difficulty, multiplier) : 20;
+        quizState.streak = nextStreak;
+        quizState.bestStreak = Math.max(safeNonNegativeInt(quizState.bestStreak, 0, 100000), nextStreak);
+        updateStreakDisplay(true);
+        playAudioElement("correctSound");
+        if (quizState.mode === "blitz") {
+            quizState.timer = Math.max(0, quizState.timer + (helpers?.BLITZ_CORRECT_BONUS || 2));
+            updateQuizTimer();
+        }
+    } else {
+        breakQuizStreak();
+        playAudioElement("wrongSound");
+        recordMistakeInVault(question);
+        if (quizState.mode === "blitz") {
+            quizState.timer = Math.max(0, quizState.timer - (helpers?.BLITZ_WRONG_PENALTY || 3));
+            updateQuizTimer();
+        } else {
+            quizState.lives = 0;
+        }
+    }
+}
+
+function finishArcadeRun(timeUp = false) {
+    if (!isArcadeActive()) return;
+    stopQuizTimer();
+    aiReaderStop();
+    stopGameMusic();
+
+    const helpers = arcadeHelpers();
+    const mode = quizState.mode;
+    const summary = {
+        score: safeNonNegativeInt(quizState.score, 0, 1000000),
+        bestStreak: safeNonNegativeInt(quizState.bestStreak, 0, 100000),
+        answered: safeNonNegativeInt(quizState.answered, 0, 100000)
+    };
+    const result = helpers
+        ? helpers.recordScore(loadArcadeBoard(mode), summary, Date.now())
+        : { rank: 0, isRecord: false, board: [] };
+    saveArcadeBoard(mode, result.board);
+
+    closeQuizVisualOnly();
+    document.body.classList.remove("arcade-active", "survival-active", "blitz-active", "combo-fever", "quiz-active");
+    quizState.mode = "normal";
+    quizState.arcadeQuestioner = "";
+
+    const panel = document.getElementById("arcadeResultPanel");
+    const title = document.getElementById("arcadeResultTitle");
+    const meta = document.getElementById("arcadeResultMeta");
+    const score = document.getElementById("arcadeResultScore");
+    const streak = document.getElementById("arcadeResultStreak");
+    const rankEl = document.getElementById("arcadeResultRank");
+    if (title) title.textContent = mode === "survival" ? "SURVIVAL GAUNTLET" : "TIMED BLITZ";
+    if (meta) {
+        meta.textContent = timeUp
+            ? "TIME'S UP — RUN COMPLETE"
+            : (mode === "survival" ? "THE GAUNTLET ENDED" : "RUN COMPLETE");
+    }
+    if (score) score.textContent = `${summary.score}`;
+    if (streak) streak.textContent = `BEST STREAK ${summary.bestStreak}`;
+    if (rankEl) {
+        rankEl.textContent = result.isRecord
+            ? "🏆 NEW RECORD!"
+            : (result.rank ? `RANK #${result.rank} ON THIS DEVICE` : "KEEP PLAYING TO REACH THE BOARD");
+    }
+    if (panel) {
+        panel.classList.add("show");
+        panel.setAttribute("aria-hidden", "false");
+    }
+    startHomeMusic();
+}
+
+function closeArcadeResult() {
+    const panel = document.getElementById("arcadeResultPanel");
+    if (panel) {
+        if (panel.contains(document.activeElement)) document.activeElement.blur();
+        panel.classList.remove("show");
+        panel.setAttribute("aria-hidden", "true");
+    }
+    updateHomeSubjectUnlocks();
+}
+
+function replayArcadeMode() {
+    const mode = document.getElementById("arcadeResultTitle")?.textContent.includes("BLITZ") ? "blitz" : "survival";
+    closeArcadeResult();
+    if (mode === "blitz") startBlitzRun();
+    else startSurvivalRun();
+}
+
+function renderArcadeHome() {
+    const helpers = arcadeHelpers();
+    if (!helpers) return;
+    for (const mode of ["survival", "blitz"]) {
+        const status = document.getElementById(mode === "survival" ? "survivalHomeStatus" : "blitzHomeStatus");
+        if (!status) continue;
+        const summary = helpers.summarizeBoard(loadArcadeBoard(mode));
+        status.textContent = summary.played
+            ? `BEST ${summary.best} PTS • STREAK ${summary.bestStreak}`
+            : (mode === "survival" ? "ONE LIFE • ENDLESS" : "60 SECONDS • +2/-3");
+    }
+}
+
 const SUBJECT_STATS_KEY = "proudGeonQuizSubjectStatsV1";
 
 function subjectStatsStorageKey() {
@@ -3140,6 +3415,7 @@ function continueJourney() {
 
 function updateHomeSubjectUnlocks() {
     renderMistakeVaultHome();
+    renderArcadeHome();
     const questionerIndicator = document.getElementById("homeQuestionerIndicator");
     if (questionerIndicator) {
         questionerIndicator.textContent = getActiveQuestioner() === "new" ? "QUESTIONER: NEW" : "QUESTIONER: PREVIOUS";
@@ -3315,10 +3591,10 @@ function prepareQuestion(question) {
         next.onclick = nextQuizStep;
     }
 
-    if (isReviewerActive()) {
-        stopQuizTimer();
-        const timerEl = document.getElementById("quizTimer");
-        if (timerEl) timerEl.textContent = "—";
+    if (isArcadeActive() && quizState.mode === "blitz") {
+        /* The blitz clock belongs to the whole run, not the question. */
+        if (!quizState.timerId) startArcadeTimer();
+        else updateQuizTimer();
         renderQuizItemBar();
     } else {
         startQuizTimer();
@@ -3339,10 +3615,12 @@ function updateQuizDisplay() {
     if (levelEl) levelEl.textContent = level;
     if (qNumEl) qNumEl.textContent = level;
     const totalEl = document.getElementById("quizQuestionTotal");
-    if (totalEl) totalEl.textContent = isPracticeMode() ? quizState.questions.length : (isDailyChallengeActive() ? DAILY_CHALLENGE_SIZE : 80);
-    if (levelEl) levelEl.textContent = isReviewerActive()
-        ? "REVIEW"
-        : (isVaultDrillActive() ? `PRACTICE ${level}` : (isDailyChallengeActive() ? `DAILY ${level}` : level));
+    if (totalEl) totalEl.textContent = isArcadeActive() ? "∞" : (isPracticeMode() ? quizState.questions.length : (isDailyChallengeActive() ? DAILY_CHALLENGE_SIZE : 80));
+    if (levelEl) levelEl.textContent = isArcadeActive()
+        ? (quizState.mode === "survival" ? `SURVIVE ${level}` : `BLITZ ${level}`)
+        : (isReviewerActive()
+            ? "REVIEW"
+            : (isVaultDrillActive() ? `PRACTICE ${level}` : (isDailyChallengeActive() ? `DAILY ${level}` : level)));
     if (coins) coins.textContent = quizState.coins;
     if (score) score.textContent = quizState.score;
     if (points) points.textContent = quizState.points;
@@ -3490,6 +3768,10 @@ function renderCurrentQuizQuestion() {
         completeMistakeVaultDrill();
         return;
     }
+    if (isArcadeActive() && quizState.index >= quizState.questions.length) {
+        extendArcadeStreamIfNeeded();
+        if (!quizState.questions.length) return;
+    }
     if (isReviewerActive() && quizState.index >= quizState.questions.length) {
         completeReviewerMode();
         return;
@@ -3498,7 +3780,7 @@ function renderCurrentQuizQuestion() {
         completeDailyChallenge();
         return;
     }
-    if (!isReviewerActive() && !isDailyChallengeActive() && quizState.index >= 80) {
+    if (!isArcadeActive() && !isReviewerActive() && !isDailyChallengeActive() && quizState.index >= 80) {
         showVictoryScreen();
         return;
     }
@@ -3532,6 +3814,20 @@ function handleQuizAnswer(value, timedOut = false, button = null) {
         correct ? "correct" : "wrong",
         timedOut ? "⏱ TIME'S UP" : (correct ? "✓ CORRECT" : "✕ WRONG")
     );
+
+    if (isArcadeActive()) {
+        handleArcadeAnswer(correct, timedOut);
+        const nextArcade = document.getElementById("quizNextButton");
+        if (nextArcade) {
+            nextArcade.disabled = false;
+            const runEnd = (quizState.mode === "survival" && quizState.lives <= 0) ||
+                (quizState.mode === "blitz" && quizState.timer <= 0);
+            nextArcade.textContent = runEnd ? "VIEW RESULT" : "NEXT →";
+        }
+        aiReaderStop();
+        if (aiReaderIsEnabled()) aiReaderSpeak(correct ? "Excellent." : (timedOut ? "Time's up." : "Incorrect."));
+        return;
+    }
 
     if (isPracticeMode()) {
         const currentQuestion = quizState.questions[quizState.index];
@@ -3705,6 +4001,18 @@ function handleQuizAnswer(value, timedOut = false, button = null) {
 
 function nextQuizStep() {
     if (!quizState.selected) return;
+
+    if (isArcadeActive()) {
+        if ((quizState.mode === "survival" && quizState.lives <= 0) ||
+            (quizState.mode === "blitz" && quizState.timer <= 0)) {
+            finishArcadeRun(quizState.mode === "blitz" && quizState.timer <= 0);
+            return;
+        }
+        quizState.index += 1;
+        quizState.selected = false;
+        renderCurrentQuizQuestion();
+        return;
+    }
 
     if (isPracticeMode()) {
         const explanationEl = document.getElementById("reviewerExplanation");
@@ -4052,6 +4360,10 @@ function closeQuizScreen() {
     }
     if (isVaultDrillActive()) {
         completeMistakeVaultDrill();
+        return;
+    }
+    if (isArcadeActive()) {
+        finishArcadeRun(false);
         return;
     }
     const confirm=document.getElementById("quizBackConfirm");
