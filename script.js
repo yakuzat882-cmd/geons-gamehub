@@ -1140,14 +1140,19 @@ function renderLevelSelection() {
     const grid = document.getElementById("levelSelectionGrid");
     if (!grid) return;
 
+    const ratings = window.GeonStars ? loadStarRatings() : {};
     grid.innerHTML = Array.from({ length: 80 }, (_, index) => {
         const level = index + 1;
         const padded = String(level).padStart(2, "0");
         const selected = level === levelSelectionSelectedLevel ? " selected" : "";
         const modifier = levelModifierFor(selectedSubject, selectedQuizType, level);
         const twist = modifier.id !== "NONE";
-        const label = twist ? `Level ${padded} — ${modifier.label}` : `Level ${padded}`;
-        return `<button type="button" class="level-selection-button${selected}${twist ? " has-modifier" : ""}" data-level="${level}" data-modifier="${twist ? modifier.id : ""}" title="${twist ? modifier.description : ""}" aria-label="${label}">${padded}</button>`;
+        const boss = level % 10 === 0;
+        const savedStars = window.GeonStars ? (ratings[window.GeonStars.keyFor(selectedSubject, selectedQuizType, level)] || 0) : 0;
+        const label = [twist ? modifier.label : "", boss ? "BOSS" : "", savedStars ? `${savedStars} star${savedStars === 1 ? "" : "s"}` : ""]
+            .filter(Boolean)
+            .reduce((base, extra) => `${base}, ${extra}`, `Level ${padded}`);
+        return `<button type="button" class="level-selection-button${selected}${twist ? " has-modifier" : ""}${boss ? " is-boss" : ""}${savedStars ? ` has-stars-${savedStars}` : ""}" data-level="${level}" data-modifier="${twist ? modifier.id : ""}" data-stars="${savedStars}" title="${savedStars ? `${modifier.description || "No twist"} • ${savedStars}★` : (twist ? modifier.description : "")}" aria-label="${label}">${padded}</button>`;
     }).join("");
 
     grid.querySelectorAll(".level-selection-button").forEach(button => {
@@ -3276,6 +3281,71 @@ function renderArcadeHome() {
     }
 }
 
+/* ========================================
+   LEVEL STARS — 1 star for a clear, 2 for clean,
+   3 for a fast run without items. Ratings can
+   only improve and are stored per questioner.
+======================================== */
+function starRatingsStorageKey() {
+    const base = window.GeonStars?.RATINGS_KEY || "proudGeonQuizStarRatingsV1";
+    return getActiveQuestioner() === "new" ? `${base}:new` : base;
+}
+
+function loadStarRatings() {
+    try {
+        const raw = JSON.parse(localStorage.getItem(starRatingsStorageKey()) || "{}");
+        return window.GeonStars ? window.GeonStars.sanitizeRatings(raw) : {};
+    } catch (error) {
+        return {};
+    }
+}
+
+function saveStarRatings(ratings) {
+    try {
+        localStorage.setItem(starRatingsStorageKey(), JSON.stringify(ratings));
+    } catch (error) {
+        console.warn("Could not save level stars safely.", error);
+    }
+}
+
+/*
+ * Normal levels pass their own question state; boss chains pass an aggregate so
+ * the whole chain is rated, not only the last summon.
+ */
+function recordLevelStars(level, aggregate = null) {
+    if (!window.GeonStars || isPracticeMode() || isArcadeActive() || isDailyChallengeActive()) return 0;
+    const info = aggregate || {
+        hadWrong: Boolean(quizState.levelHadWrongAnswer),
+        itemsUsed: safeNonNegativeInt(quizState.levelItemsUsed, 0),
+        timeUsed: quizState.questionStartedAt ? (Date.now() - quizState.questionStartedAt) / 1000 : 0,
+        timeLimit: currentQuestionTimeLimit()
+    };
+    const stars = window.GeonStars.starsFor({
+        completed: true,
+        wrong: info.hadWrong ? 1 : 0,
+        itemsUsed: info.itemsUsed,
+        timeUsed: info.timeUsed,
+        timeLimit: info.timeLimit
+    });
+    if (!stars) return 0;
+    const ratings = window.GeonStars.record(loadStarRatings(), quizState.subject, quizState.quizType, level, stars);
+    saveStarRatings(ratings);
+    return stars;
+}
+
+function starSummaryForSubject(subject) {
+    const total = { completed: 0, earned: 0, possible: 0 };
+    if (!window.GeonStars) return total;
+    const ratings = loadStarRatings();
+    for (const quizType of QUIZ_TYPES) {
+        const summary = window.GeonStars.summaryFor(ratings, subject, quizType);
+        total.completed += summary.completed;
+        total.earned += summary.earned;
+        total.possible += summary.possible;
+    }
+    return total;
+}
+
 const SUBJECT_STATS_KEY = "proudGeonQuizSubjectStatsV1";
 
 function subjectStatsStorageKey() {
@@ -3438,6 +3508,12 @@ function updateHomeSubjectUnlocks() {
         row.classList.add(`progress-tier-${mastery.tier}`);
 
         if (levelEl) levelEl.textContent = `LEVEL ${highestCompleted}/80`;
+        const starsEl = row.querySelector(".subject-stars");
+        if (starsEl && window.GeonStars) {
+            const summary = starSummaryForSubject(subject);
+            starsEl.textContent = summary.earned ? `★ ${summary.earned}/480` : "";
+            starsEl.setAttribute("aria-label", summary.earned ? `${summary.earned} of 480 stars earned in ${subject}` : "");
+        }
         if (masteryEl) {
             masteryEl.textContent = mastery.label;
             masteryEl.setAttribute("aria-label", `${subject} mastery: ${mastery.label}`);
@@ -3596,6 +3672,11 @@ function prepareQuestion(question) {
         if (!quizState.timerId) startArcadeTimer();
         else updateQuizTimer();
         renderQuizItemBar();
+    } else if (quizState.boss) {
+        /* The boss clock runs across the whole chain, pausing on lock-in. */
+        if (!quizState.timerId) startBossTimer();
+        else updateQuizTimer();
+        renderQuizItemBar();
     } else {
         startQuizTimer();
         renderQuizItemBar();
@@ -3618,9 +3699,11 @@ function updateQuizDisplay() {
     if (totalEl) totalEl.textContent = isArcadeActive() ? "∞" : (isPracticeMode() ? quizState.questions.length : (isDailyChallengeActive() ? DAILY_CHALLENGE_SIZE : 80));
     if (levelEl) levelEl.textContent = isArcadeActive()
         ? (quizState.mode === "survival" ? `SURVIVE ${level}` : `BLITZ ${level}`)
-        : (isReviewerActive()
-            ? "REVIEW"
-            : (isVaultDrillActive() ? `PRACTICE ${level}` : (isDailyChallengeActive() ? `DAILY ${level}` : level)));
+        : (quizState.boss
+            ? `BOSS ${quizState.boss.served + 1}/${quizState.boss.chain}`
+            : (isReviewerActive()
+                ? "REVIEW"
+                : (isVaultDrillActive() ? `PRACTICE ${level}` : (isDailyChallengeActive() ? `DAILY ${level}` : level))));
     if (coins) coins.textContent = quizState.coins;
     if (score) score.textContent = quizState.score;
     if (points) points.textContent = quizState.points;
@@ -3719,8 +3802,11 @@ function startQuizAtSelectedLevel(box, selectedLevel) {
             secondChanceUsed: false,
             hintUsed: false
         },
-        mode: "normal"
+        mode: "normal",
+        boss: buildBossPlan(subject, quizType, safeSelectedLevel, source)
     };
+    /* The shared boss clock starts once; pauses and resumes keep the remaining time. */
+    if (quizState.boss) quizState.timer = BOSS_CLOCK_SECONDS;
 
     const levelPanel = document.getElementById("levelSelection");
     const quizScreen = document.getElementById("quizScreen");
@@ -3754,6 +3840,161 @@ function startQuizAtSelectedLevel(box, selectedLevel) {
     renderCurrentQuizQuestion();
 }
 
+/* ========================================
+   BOSS LEVELS — every 10th level is a chain of
+   three questions on one shared twenty-second clock.
+======================================== */
+const BOSS_CHAIN_LENGTH = 3;
+const BOSS_CLOCK_SECONDS = 20;
+const BOSS_CHEST_COINS = Object.freeze({ NORMAL: 15, HARD: 25, INSANE: 40, IMPOSSIBLE: 60 });
+const BOSS_CHEST_POINTS = 10;
+
+function questionBandForLevel(level) {
+    const value = Number(level);
+    if (value >= 61) return "IMPOSSIBLE";
+    if (value >= 41) return "INSANE";
+    if (value >= 21) return "HARD";
+    return "NORMAL";
+}
+
+/*
+ * A boss plan only exists for a multiple of ten in the normal campaign. The three
+ * summons are drawn from the level's own difficulty band, never from future levels.
+ */
+function buildBossPlan(subject, quizType, level, source) {
+    if (!Number.isInteger(level) || level < 10 || level % 10 !== 0) return null;
+    const band = questionBandForLevel(level);
+    const bandPool = (source || []).filter(question =>
+        String(question.difficulty || "").toUpperCase() === band);
+    if (bandPool.length < BOSS_CHAIN_LENGTH) return null;
+    const questions = shuffleArray([...bandPool]).slice(0, BOSS_CHAIN_LENGTH);
+    return {
+        band,
+        served: 0,
+        chain: BOSS_CHAIN_LENGTH,
+        questions,
+        hadWrong: false,
+        itemsUsed: 0,
+        startedAt: Date.now()
+    };
+}
+
+/* Shared chain clock with the same ownership guard as the other timers. */
+function startBossTimer() {
+    stopQuizTimer();
+    const owner = quizState;
+    owner.timer = Math.max(1, Math.round(Number(owner.timer) || BOSS_CLOCK_SECONDS));
+    updateQuizTimer();
+    const intervalId = setInterval(() => {
+        if (quizState !== owner || quizState.timerId !== intervalId || !quizState.boss) {
+            clearInterval(intervalId);
+            return;
+        }
+        quizState.timer--;
+        updateQuizTimer();
+        if (quizState.timer <= 0) {
+            stopQuizTimer();
+            failBossRound();
+        }
+    }, 1000);
+    owner.timerId = intervalId;
+}
+
+/*
+ * A chain that runs out of time is retried from the first summon. It costs one
+ * life, it is never perfect, and progress is unchanged.
+ */
+function failBossRound() {
+    const boss = quizState?.boss;
+    if (!boss) return;
+    quizState.lives -= 1;
+    showStreakFeedback("⏱ THE BOSS ESCAPED\nThree summons reset. −1 life.", 2200, "broken");
+    if (quizState.lives <= 0) {
+        showGameOverScreen();
+        return;
+    }
+    quizState.boss = {
+        ...boss,
+        served: 0,
+        questions: shuffleArray([...boss.questions]),
+        hadWrong: true,
+        itemsUsed: boss.itemsUsed,
+        startedAt: Date.now()
+    };
+    quizState.selected = false;
+    quizState.timer = BOSS_CLOCK_SECONDS;
+    renderCurrentQuizQuestion();
+}
+
+function grantBossChest(level) {
+    const band = questionBandForLevel(level);
+    const coins = BOSS_CHEST_COINS[band] || BOSS_CHEST_COINS.NORMAL;
+    quizState.coins += coins;
+    quizState.points += BOSS_CHEST_POINTS;
+    const pool = ["hint", "fiftyFifty", "secondChance", "lifeToken", "timeBoost"];
+    if (typeof itemInventory === "object" && itemInventory) {
+        const gift = pool[Math.floor(Math.random() * pool.length)];
+        itemInventory[gift] = safeNonNegativeInt(itemInventory[gift], 0) + 1;
+        if (typeof saveItemInventory === "function") saveItemInventory();
+        showStreakFeedback(
+            `🎁 BOSS CHEST\n+${coins} COINS • +${BOSS_CHEST_POINTS} POINTS • +1 ${String(SHOP_ITEMS[gift]?.name || gift).toUpperCase()}`,
+            2600,
+            "combo"
+        );
+    }
+}
+
+/*
+ * The chain ends only when all three summons fall. Progress, stars and the
+ * perfect bonus use the whole chain, not a single question.
+ */
+function completeBossChain() {
+    const boss = quizState.boss;
+    quizState.boss = null;
+    const levelCompleted = quizState.index + 1;
+    checkSpecialAchievementOnLevelComplete();
+
+    grantBossChest(levelCompleted);
+
+    setQuizProgress(quizState.subject, quizState.quizType, Math.max(getQuizProgress(quizState.subject, quizState.quizType), levelCompleted));
+    recordQuizLevelCompleted(quizState.subject, quizState.quizType, levelCompleted);
+    recordLevelStars(levelCompleted, {
+        hadWrong: boss.hadWrong,
+        itemsUsed: boss.itemsUsed,
+        timeUsed: (Date.now() - boss.startedAt) / 1000,
+        timeLimit: boss.chain * currentQuestionTimeLimit()
+    });
+
+    if (!boss.hadWrong && boss.itemsUsed === 0) {
+        const perfectCoins = Math.round(PERFECT_LEVEL_COINS * modifierCoinMultiplier());
+        quizState.coins += perfectCoins;
+        quizState.points += PERFECT_LEVEL_POINTS;
+        quizState.score += PERFECT_LEVEL_SCORE;
+        addPerfectLevel();
+        showStreakFeedback(`🏅 PERFECT BOSS\n+${perfectCoins} COINS • +${PERFECT_LEVEL_POINTS} POINTS`, 1800, "combo");
+    }
+
+    saveGlobalGameData();
+
+    if (quizState.lives <= 0) {
+        showGameOverScreen();
+        return;
+    }
+    if (levelCompleted >= 80) {
+        quizState.index = 80;
+        clearUsedQuestionIds(quizState.subject, quizState.quizType);
+        quizState.usedQuestionIds = [];
+        showVictoryScreen();
+        return;
+    }
+    quizState.index++;
+    if (levelCompleted % 5 === 0) {
+        showAchievementScreen(levelCompleted);
+    } else {
+        renderCurrentQuizQuestion();
+    }
+}
+
 /* The twist for a level is derived from the level itself, so it never changes. */
 function levelModifierFor(subject, quizType, level) {
     const fallback = { id: "NONE", label: "", icon: "", description: "", coinMultiplier: 1, timerDelta: 0, blocksHint: false, hidesChoice: false, suddenDeath: false };
@@ -3764,6 +4005,11 @@ function levelModifierFor(subject, quizType, level) {
 
 function renderCurrentQuizQuestion() {
     if (!quizState.questions.length) return;
+    if (isArcadeActive() === false && quizState.boss) {
+        updateQuizDisplay();
+        prepareQuestion(quizState.boss.questions[quizState.boss.served]);
+        return;
+    }
     if (isVaultDrillActive() && quizState.index >= quizState.questions.length) {
         completeMistakeVaultDrill();
         return;
@@ -4014,6 +4260,25 @@ function nextQuizStep() {
         return;
     }
 
+    /* A boss chain advances through its summons and ends with the chest. */
+    if (quizState.boss) {
+        const boss = quizState.boss;
+        boss.hadWrong = boss.hadWrong || quizState.levelHadWrongAnswer;
+        boss.itemsUsed = safeNonNegativeInt(boss.itemsUsed, 0) + safeNonNegativeInt(quizState.levelItemsUsed, 0);
+        if (quizState.lives <= 0) {
+            showGameOverScreen();
+            return;
+        }
+        boss.served += 1;
+        quizState.selected = false;
+        if (boss.served < boss.chain) {
+            renderCurrentQuizQuestion();
+        } else {
+            completeBossChain();
+        }
+        return;
+    }
+
     if (isPracticeMode()) {
         const explanationEl = document.getElementById("reviewerExplanation");
         if (explanationEl) {
@@ -4080,6 +4345,8 @@ function nextQuizStep() {
         addPerfectLevel();
         showStreakFeedback(`🏅 PERFECT LEVEL\n+${perfectCoins} COINS • +${PERFECT_LEVEL_POINTS} POINTS`, 1800, "combo");
     }
+
+    recordLevelStars(levelCompleted);
 
     if (quizState.lives <= 0) {
         showGameOverScreen();

@@ -517,6 +517,75 @@ async function run(origin, server) {
     boardsIsolated && window.eval(`arcadeStorageKey("blitz")`) !== window.eval(`arcadeStorageKey("survival")`),
     `${window.eval(`arcadeStorageKey("survival")`)} vs ${window.eval(`arcadeStorageKey("blitz")`)}`);
 
+  /* ------------------------------------------------------------- boss + stars */
+  /* Every tenth level is a three-question chain on a shared twenty-second clock. */
+  window.setQuestioner("previous");
+  window.openSubjectSelection("SCIENCE");
+  window.openLevelSelection("A");
+  window.startQuizAtSelectedLevel("A", 10);
+  await wait(220);
+  const bossStart = quizStateNow(window).boss;
+  const bossLabel = document_getText(window, "quizLevel");
+  const progressBeforeBoss = window.getQuizProgress("SCIENCE", "SUBJECT 1");
+  const starsBeforeBoss = window.eval(`loadStarRatings()["SCIENCE|SUBJECT 1|10"] || 0`);
+  const inventoryBeforeBoss = window.eval("Object.values(itemInventory).reduce((a, b) => a + Number(b || 0), 0)");
+  check("level 10 opens as a BOSS chain on the shared clock",
+    bossStart && bossStart.chain === 3 && bossStart.questions.length === 3 && bossLabel === "BOSS 1/3" &&
+    quizStateNow(window).timer <= 20 &&
+    bossStart.questions.every(question => question.difficulty === "NORMAL"),
+    `chain ${bossStart ? bossStart.chain : "none"}, label "${bossLabel}", clock ${quizStateNow(window).timer}s`);
+
+  for (let summon = 0; summon < 3; summon += 1) {
+    answerThroughUi(window, sample.previous, true);
+    await wait(190);
+    const next = window.document.getElementById("quizNextButton");
+    if (next) next.click();
+    await wait(250);
+  }
+  const achievementShown = window.document.getElementById("achievementScreen")?.classList.contains("show");
+  const inventoryAfterBoss = window.eval("Object.values(itemInventory).reduce((a, b) => a + Number(b || 0), 0)");
+  const starsAfterBoss = window.eval(`loadStarRatings()["SCIENCE|SUBJECT 1|10"] || 0`);
+  const progressAfterBoss = window.getQuizProgress("SCIENCE", "SUBJECT 1");
+  check("a beaten boss chain pays the chest, records progress and stars",
+    quizStateNow(window).boss === null && quizStateNow(window).mode === "normal" &&
+    progressAfterBoss >= Math.max(10, progressBeforeBoss) &&
+    inventoryAfterBoss === inventoryBeforeBoss + 1 && starsAfterBoss >= 2 && starsAfterBoss > starsBeforeBoss,
+    `progress ${progressBeforeBoss} → ${progressAfterBoss}, items +${inventoryAfterBoss - inventoryBeforeBoss}, stars ${starsBeforeBoss} → ${starsAfterBoss}, milestone screen ${achievementShown}`);
+  window.continueAfterAchievement();
+  await wait(200);
+
+  /* The level grid shows the boss badge and the saved stars. */
+  window.closeQuizVisualOnly();
+  window.document.body.classList.remove("quiz-active");
+  window.openSubjectSelection("SCIENCE");
+  window.openLevelSelection("A");
+  await wait(200);
+  window.renderLevelSelection();
+  const gridButtons = [...window.document.querySelectorAll(".level-selection-button")];
+  const bossButton = gridButtons.find(button => button.dataset.level === "10");
+  const plainButton = gridButtons.find(button => button.dataset.level === "12");
+  const bossShown = bossButton?.classList.contains("is-boss") && Number(bossButton?.dataset.stars) >= 1;
+  check("the level grid marks bosses and earned stars",
+    gridButtons.length === 80 && bossShown && !plainButton?.classList.contains("is-boss"),
+    `boss L10: classes "${bossButton ? bossButton.className : ""}", stars ${bossButton ? bossButton.dataset.stars : ""}`);
+
+  /* A timed-out chain costs a life, restarts, and takes no progress. */
+  window.startQuizAtSelectedLevel("A", 20);
+  await wait(220);
+  const livesBeforeEscape = quizStateNow(window).lives;
+  const progressBeforeEscape = window.getQuizProgress("SCIENCE", "SUBJECT 1");
+  window.eval("quizState.timer = 1");
+  await wait(1600);
+  const afterEscape = quizStateNow(window);
+  const progressAfterEscape = window.getQuizProgress("SCIENCE", "SUBJECT 1");
+  check("an escaped boss resets its chain without touching progress",
+    afterEscape.boss && afterEscape.boss.served === 0 && afterEscape.boss.hadWrong === true &&
+    afterEscape.lives === livesBeforeEscape - 1 && progressAfterEscape === progressBeforeEscape &&
+    afterEscape.timer > 1 && document_getText(window, "quizLevel") === "BOSS 1/3",
+    `lives ${livesBeforeEscape} → ${afterEscape.lives}, progress ${progressBeforeEscape} → ${progressAfterEscape}, clock ${afterEscape.timer}s`);
+  window.closeQuizVisualOnly();
+  window.document.body.classList.remove("quiz-active");
+
   check("no JavaScript console errors from the questioner", problems.length === 0,
     problems.slice(0, 3).join(" | ") || "clean");
 

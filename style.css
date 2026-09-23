@@ -10787,3 +10787,47 @@ body.arcade-active .quiz-status { display: none !important; }
   .arcade-icon { font-size: 24px; }
   .arcade-result-score { font-size: 44px; }
 }
+
+/* =========================================================
+   LEVEL STARS + BOSS BADGES
+========================================================= */
+
+.level-selection-button.has-stars-1::before { content: "★"; }
+.level-selection-button.has-stars-2::before { content: "★★"; }
+.level-selection-button.has-stars-3::before { content: "★★★"; }
+.level-selection-button[class*="has-stars-"] {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  line-height: 1.05;
+}
+.level-selection-button[class*="has-stars-"]::before {
+  font-size: 8px;
+  color: var(--warning);
+  letter-spacing: .5px;
+}
+.level-selection-button.is-boss {
+  border-style: double;
+  border-width: 3px;
+  border-color: var(--danger);
+  font-weight: 900;
+}
+.level-selection-button.is-boss::after {
+  content: "⚔";
+  position: absolute;
+  bottom: 2px;
+  right: 4px;
+  font-size: 8px;
+  color: var(--danger);
+}
+.level-selection-button.is-boss.has-modifier::after { content: "⚔◆"; }
+.subject-stars {
+  font-size: 10px;
+  font-weight: 900;
+  color: var(--warning);
+  letter-spacing: .5px;
+  white-space: nowrap;
+}
