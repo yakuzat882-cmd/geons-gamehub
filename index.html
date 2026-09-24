@@ -399,6 +399,27 @@
 </div>
 
 <!-- =================================
+     QUEST BOARD PANEL
+================================== -->
+<div id="questBoardPanel" class="quest-board-panel" role="dialog" aria-modal="true"
+     aria-labelledby="questBoardTitle" aria-hidden="true">
+    <div class="quest-board-box">
+        <button type="button" class="quest-board-back" onclick="closeQuestBoard()">← BACK</button>
+        <h2 id="questBoardTitle">🎯 QUEST BOARD</h2>
+        <p class="quest-board-subtitle">DAILY RESETS AT MIDNIGHT • WEEKLY ON MONDAY</p>
+        <div id="questBoardDaily" class="quest-list" aria-live="polite"></div>
+        <div id="questBoardWeekly" class="quest-list" aria-live="polite"></div>
+        <div class="quest-training" id="questTrainingBox">
+            <div class="quest-training-copy">
+                <strong>WEAK-SPOT TRAINING</strong>
+                <small id="weakSpotStatus">ANSWER QUESTIONS TO FIND YOUR WEAKEST CATEGORY</small>
+            </div>
+            <button type="button" id="weakSpotTrainButton" onclick="startWeakSpotFromBoard()">TRAIN</button>
+        </div>
+    </div>
+</div>
+
+<!-- =================================
      STORY QUIZ — STORY SELECTION
 ================================== -->
 <div id="storySelectionPanel" class="story-quiz-panel" role="dialog" aria-modal="true"
@@ -928,6 +949,18 @@
             <small id="mistakeVaultHomeStatus">NOTHING TO CLEAR</small>
         </span>
         <span class="mistake-vault-arrow" aria-hidden="true">→</span>
+    </button>
+
+    <!-- =================================
+         QUEST BOARD + WEAK-SPOT TRAINING
+    ================================== -->
+    <button type="button" id="questBoardCard" class="quest-board-card" onclick="openQuestBoard()" aria-label="Open the quest board">
+        <span class="quest-board-icon" aria-hidden="true">🎯</span>
+        <span class="quest-board-copy">
+            <strong>QUEST BOARD</strong>
+            <small id="questBoardHomeStatus">3 DAILY • 3 WEEKLY</small>
+        </span>
+        <span class="quest-board-arrow" aria-hidden="true">→</span>
     </button>
 
     <!-- =================================
@@ -1807,6 +1840,8 @@
 <script src="src/quiz/mistakeVault.js"></script>
 <script src="src/quiz/arcadeRanks.js"></script>
 <script src="src/progression/starRatings.js"></script>
+<script src="src/progression/quests.js"></script>
+<script src="src/progression/weakSpot.js"></script>
 <script src="src/progression/streaks.js"></script>
 <script src="src/data/dailyChallenge.js"></script>
 <script src="src/audio/audioManager.js"></script>

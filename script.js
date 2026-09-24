@@ -1505,6 +1505,7 @@ function buyItem(id) {
 
     gameData.coins = coinBalance - item.price;
     itemInventory[id] = safeNonNegativeInt(itemInventory[id], 0, 999) + 1;
+    bumpQuestCounter("spent", item.price);
 
     saveItemInventory();
     updateDisplay();
@@ -2485,6 +2486,7 @@ function completeDailyChallenge() {
         state.completed = true;
         state.rewardClaimed = true;
         saveDailyChallengeState(state);
+        bumpQuestCounter("dailyDone", 1);
         quizState.points = safeNonNegativeInt(Number(quizState.points || 0) + DAILY_BONUS_POINTS, 0);
         quizState.coins = safeNonNegativeInt(Number(quizState.coins || 0) + DAILY_BONUS_COINS, 0);
         saveGlobalGameData();
@@ -2879,6 +2881,7 @@ function recordVaultDrillResult(questionId, correct) {
     if (!helpers || !questionId) return;
     const result = helpers.recordResult(loadMistakeVault(), questionId, correct, Date.now());
     saveMistakeVault(result.entries);
+    if (result.retired) bumpQuestCounter("retired", 1);
     if (result.cleared) showStreakFeedback("🧰 MISTAKE VAULT CLEARED\nEvery stored question is mastered!", 2200, "combo");
     else if (result.retired) showStreakFeedback("✅ MISTAKE CLEARED\nThat question left the vault.", 1500, "combo");
 }
@@ -2932,14 +2935,15 @@ function findBankQuestionById(questioner, id) {
     return null;
 }
 
-function startMistakeVaultDrill() {
+function startMistakeVaultDrill(customQuestions = null, drillLabel = "PRACTICE") {
     const helpers = vaultHelpers();
     if (!helpers) return;
     const questioner = getActiveQuestioner();
-    const entries = helpers.pickForDrill(loadMistakeVault(), helpers.DRILL_SIZE);
-    const questions = entries
-        .map(entry => findBankQuestionById(questioner, entry.id))
-        .filter(Boolean);
+    const questions = Array.isArray(customQuestions) && customQuestions.length
+        ? customQuestions
+        : helpers.pickForDrill(loadMistakeVault(), helpers.DRILL_SIZE)
+            .map(entry => findBankQuestionById(questioner, entry.id))
+            .filter(Boolean);
 
     if (!questions.length) {
         saveMistakeVault([]);
@@ -2973,7 +2977,8 @@ function startMistakeVaultDrill() {
         modifier: { id: "NONE", label: "", icon: "", description: "", coinMultiplier: 1, timerDelta: 0, blocksHint: false, hidesChoice: false, suddenDeath: false },
         itemState: { fiftyFiftyUsed: false, secondChanceUsed: false, hintUsed: false, awaitingSecondChance: false },
         mode: "vault",
-        vaultQuestioner: questioner
+        vaultQuestioner: questioner,
+        drillLabel: String(drillLabel || "PRACTICE").slice(0, 12)
     };
 
     const quizScreen = document.getElementById("quizScreen");
@@ -3219,6 +3224,9 @@ function finishArcadeRun(timeUp = false) {
         ? helpers.recordScore(loadArcadeBoard(mode), summary, Date.now())
         : { rank: 0, isRecord: false, board: [] };
     saveArcadeBoard(mode, result.board);
+    bumpQuestCounter("answered", summary.answered);
+    raiseQuestCounter(mode === "survival" ? "survivalBest" : "blitzBest",
+        mode === "survival" ? summary.answered : summary.score);
 
     closeQuizVisualOnly();
     document.body.classList.remove("arcade-active", "survival-active", "blitz-active", "combo-fever", "quiz-active");
@@ -3330,6 +3338,7 @@ function recordLevelStars(level, aggregate = null) {
     if (!stars) return 0;
     const ratings = window.GeonStars.record(loadStarRatings(), quizState.subject, quizState.quizType, level, stars);
     saveStarRatings(ratings);
+    bumpQuestCounter("stars", stars);
     return stars;
 }
 
@@ -3344,6 +3353,296 @@ function starSummaryForSubject(subject) {
         total.possible += summary.possible;
     }
     return total;
+}
+
+/* ========================================
+   QUEST BOARD + WEAK-SPOT TRAINING
+   Three daily and three weekly quests picked deterministically
+   from the date/week and the questioner. Counters live per day and
+   per ISO week, so the board rolls over by itself.
+======================================== */
+const QUEST_COUNTERS_KEY = "proudGeonQuizQuestCountersV1";
+const QUEST_CLAIMS_KEY = "proudGeonQuizQuestClaimsV1";
+
+function questHelpers() {
+    return window.GeonQuests || null;
+}
+
+function questStorageKey(base) {
+    return getActiveQuestioner() === "new" ? `${base}:new` : base;
+}
+
+function loadQuestCounters() {
+    const helpers = questHelpers();
+    const today = getDailyChallengeDate();
+    const week = helpers ? helpers.isoWeekKey(today) : "";
+    const fallback = { day: today, week, fields: helpers ? helpers.sanitizeCounters({}) : {} };
+    const weekFallback = { day: today, week, fields: helpers ? helpers.sanitizeCounters({}) : {} };
+    let raw = {};
+    try {
+        raw = JSON.parse(localStorage.getItem(questStorageKey(QUEST_COUNTERS_KEY)) || "{}");
+    } catch (error) {
+        raw = {};
+    }
+    const byScope = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    const day = byScope.day && byScope.day.date === today
+        ? byScope.day
+        : { date: today, fields: {} };
+    const weekRow = byScope.week && byScope.week.week === week
+        ? byScope.week
+        : { week, fields: {} };
+    return {
+        day: { date: today, fields: helpers ? helpers.sanitizeCounters(day.fields) : fallback.fields },
+        week: { week, fields: helpers ? helpers.sanitizeCounters(weekRow.fields) : weekFallback.fields }
+    };
+}
+
+function saveQuestCounters(rows) {
+    try {
+        localStorage.setItem(questStorageKey(QUEST_COUNTERS_KEY), JSON.stringify(rows));
+    } catch (error) {
+        console.warn("Could not save quest counters safely.", error);
+    }
+}
+
+function bumpQuestCounter(field, amount) {
+    const helpers = questHelpers();
+    if (!helpers || !helpers.COUNTER_FIELDS.includes(field)) return;
+    const rows = loadQuestCounters();
+    const delta = Math.max(0, Math.min(1000, Math.floor(Number(amount) || 0)));
+    if (!delta) return;
+    rows.day.fields[field] = Math.min(100000, (rows.day.fields[field] || 0) + delta);
+    rows.week.fields[field] = Math.min(100000, (rows.week.fields[field] || 0) + delta);
+    saveQuestCounters(rows);
+    if (document.getElementById("questBoardPanel")?.classList.contains("show")) renderQuestBoard();
+    renderQuestHome();
+}
+
+/* Session-based fields keep the best single-session value, not a sum. */
+function raiseQuestCounter(field, value) {
+    const helpers = questHelpers();
+    if (!helpers || !helpers.COUNTER_FIELDS.includes(field)) return;
+    const rows = loadQuestCounters();
+    const nextValue = Math.max(0, Math.min(100000, Math.floor(Number(value) || 0)));
+    rows.day.fields[field] = Math.max(rows.day.fields[field] || 0, nextValue);
+    rows.week.fields[field] = Math.max(rows.week.fields[field] || 0, nextValue);
+    saveQuestCounters(rows);
+    if (document.getElementById("questBoardPanel")?.classList.contains("show")) renderQuestBoard();
+    renderQuestHome();
+}
+
+function loadQuestClaims() {
+    const helpers = questHelpers();
+    const today = getDailyChallengeDate();
+    const week = helpers ? helpers.isoWeekKey(today) : "";
+    let raw = {};
+    try {
+        raw = JSON.parse(localStorage.getItem(questStorageKey(QUEST_CLAIMS_KEY)) || "{}");
+    } catch (error) {
+        raw = {};
+    }
+    const byScope = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    const day = byScope.day && byScope.day.date === today ? byScope.day : { date: today, ids: [] };
+    const weekRow = byScope.week && byScope.week.week === week ? byScope.week : { week, ids: [] };
+    return {
+        day: { date: today, ids: helpers ? helpers.sanitizeClaimIds(day.ids) : [] },
+        week: { week, ids: helpers ? helpers.sanitizeClaimIds(weekRow.ids) : [] }
+    };
+}
+
+function saveQuestClaims(rows) {
+    try {
+        localStorage.setItem(questStorageKey(QUEST_CLAIMS_KEY), JSON.stringify(rows));
+    } catch (error) {
+        console.warn("Could not save quest claims safely.", error);
+    }
+}
+
+function currentQuestBoard() {
+    const helpers = questHelpers();
+    if (!helpers) return { daily: [], weekly: [], counters: { day: {}, week: {} }, claims: { day: { ids: [] }, week: { ids: [] } } };
+    const today = getDailyChallengeDate();
+    const week = helpers.isoWeekKey(today);
+    return {
+        daily: helpers.questsForDay(today, getActiveQuestioner()),
+        weekly: helpers.questsForWeek(week, getActiveQuestioner()),
+        counters: loadQuestCounters(),
+        claims: loadQuestClaims()
+    };
+}
+
+/* A claim grants the listed coins and items exactly twice-checked: once here. */
+function claimQuest(id) {
+    const helpers = questHelpers();
+    if (!helpers) return false;
+    const board = currentQuestBoard();
+    const dayDone = helpers.claimable(board.daily, board.counters.day.fields, board.claims.day.ids);
+    const weekDone = helpers.claimable(board.weekly, board.counters.week.fields, board.claims.week.ids);
+    const fromDay = dayDone.find(definition => definition.id === id);
+    const fromWeek = weekDone.find(definition => definition.id === id);
+    const definition = fromDay || fromWeek;
+    if (!definition) return false;
+
+    /*
+     * The engine writes quizState back into gameData on every save, so the live
+     * wallet must be raised in step with the stored one, or the next save would
+     * silently erase the payout.
+     */
+    const coins = safeNonNegativeInt(definition.reward?.coins, 0);
+    gameData.coins = safeNonNegativeInt(gameData.coins, 0) + coins;
+    if (quizState && typeof quizState === "object") {
+        quizState.coins = safeNonNegativeInt(quizState.coins, 0) + coins;
+    }
+    const gifts = [];
+    if (coins) gifts.push(`${coins} COINS`);
+    for (const [itemId, amount] of Object.entries(definition.reward?.items || {})) {
+        const count = Math.max(0, Math.min(9, Math.floor(Number(amount) || 0)));
+        if (!count || !SHOP_ITEMS[itemId]) continue;
+        itemInventory[itemId] = safeNonNegativeInt(itemInventory[itemId], 0) + count;
+        gifts.push(`${count} × ${SHOP_ITEMS[itemId].name}`);
+    }
+    if (Object.keys(definition.reward?.items || {}).length) saveItemInventory();
+
+    if (fromDay) board.claims.day.ids = helpers.sanitizeClaimIds([...board.claims.day.ids, id]);
+    if (fromWeek) board.claims.week.ids = helpers.sanitizeClaimIds([...board.claims.week.ids, id]);
+    saveQuestClaims(board.claims);
+    saveGlobalGameData();
+
+    showItemFeedback(`🎉 QUEST COMPLETE\n${definition.label}\n+ ${gifts.join(" + ")}`);
+    renderQuestBoard();
+    renderQuestHome();
+    return true;
+}
+
+function questRowHtml(definition, progress, claimed) {
+    const pct = Math.round(progress.ratio * 100);
+    const state = claimed ? "claimed" : (progress.done ? "ready" : "open");
+    const button = claimed
+        ? `<button type="button" class="quest-claim" disabled>✓ CLAIMED</button>`
+        : (progress.done
+            ? `<button type="button" class="quest-claim quest-claim-ready" onclick="claimQuest('${definition.id}')">CLAIM</button>`
+            : `<span class="quest-count">${progress.current}/${progress.target}</span>`);
+    return `<div class="quest-row quest-${state}">
+        <span class="quest-icon" aria-hidden="true">${definition.icon}</span>
+        <span class="quest-copy">
+            <strong>${definition.label}</strong>
+            <span class="quest-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="${definition.label}">
+                <span class="quest-bar-fill" style="width:${pct}%"></span>
+            </span>
+        </span>
+        ${button}
+    </div>`;
+}
+
+function renderQuestBoard() {
+    const helpers = questHelpers();
+    const dailyList = document.getElementById("questBoardDaily");
+    const weeklyList = document.getElementById("questBoardWeekly");
+    if (!helpers || !dailyList || !weeklyList) return;
+    const board = currentQuestBoard();
+
+    dailyList.innerHTML = `<h3>DAILY</h3>` + board.daily
+        .map(definition => questRowHtml(definition, helpers.progressOf(definition, board.counters.day.fields), board.claims.day.ids.includes(definition.id)))
+        .join("");
+    weeklyList.innerHTML = `<h3>WEEKLY</h3>` + board.weekly
+        .map(definition => questRowHtml(definition, helpers.progressOf(definition, board.counters.week.fields), board.claims.week.ids.includes(definition.id)))
+        .join("");
+
+    renderWeakSpotFooter();
+}
+
+function renderQuestHome() {
+    const helpers = questHelpers();
+    const status = document.getElementById("questBoardHomeStatus");
+    if (!helpers || !status) return;
+    const board = currentQuestBoard();
+    const ready = helpers.claimable(board.daily, board.counters.day.fields, board.claims.day.ids).length +
+        helpers.claimable(board.weekly, board.counters.week.fields, board.claims.week.ids).length;
+    status.textContent = ready
+        ? `${ready} REWARD${ready === 1 ? "" : "S"} READY TO CLAIM`
+        : `${board.daily.length} DAILY • ${board.weekly.length} WEEKLY`;
+}
+
+function openQuestBoard() {
+    const panel = document.getElementById("questBoardPanel");
+    if (!panel) return;
+    renderQuestBoard();
+    panel.classList.add("show");
+    panel.setAttribute("aria-hidden", "false");
+}
+
+function closeQuestBoard() {
+    const panel = document.getElementById("questBoardPanel");
+    if (!panel) return;
+    if (panel.contains(document.activeElement)) document.activeElement.blur();
+    panel.classList.remove("show");
+    panel.setAttribute("aria-hidden", "true");
+    renderQuestHome();
+}
+
+/* ---- weak-spot training ------------------------------------------------ */
+
+function weakSpotStatsStorageKey() {
+    const base = window.GeonWeakSpot?.STATS_KEY || "proudGeonQuizCategoryStatsV1";
+    return getActiveQuestioner() === "new" ? `${base}:new` : base;
+}
+
+function loadCategoryStats() {
+    try {
+        const raw = JSON.parse(localStorage.getItem(weakSpotStatsStorageKey()) || "{}");
+        return window.GeonWeakSpot ? window.GeonWeakSpot.sanitizeCategoryStats(raw) : {};
+    } catch (error) {
+        return {};
+    }
+}
+
+function saveCategoryStats(stats) {
+    try {
+        localStorage.setItem(weakSpotStatsStorageKey(), JSON.stringify(stats));
+    } catch (error) {
+        console.warn("Could not save category stats safely.", error);
+    }
+}
+
+function recordCategoryAnswerStat(subject, category, correct) {
+    const helpers = window.GeonWeakSpot;
+    if (!helpers || isPracticeMode()) return;
+    saveCategoryStats(helpers.record(loadCategoryStats(), subject, category, correct));
+}
+
+function currentWeakSpot() {
+    const helpers = window.GeonWeakSpot;
+    return helpers ? helpers.weakSpotOf(loadCategoryStats()) : null;
+}
+
+function renderWeakSpotFooter() {
+    const status = document.getElementById("weakSpotStatus");
+    const button = document.getElementById("weakSpotTrainButton");
+    if (!status && !button) return;
+    const spot = currentWeakSpot();
+    if (!spot) {
+        if (status) status.textContent = "EVERY KNOWN CATEGORY IS ON TRACK (70%+)";
+        if (button) { button.disabled = true; button.textContent = "ALL STRONG"; }
+        return;
+    }
+    const accuracy = Math.round(spot.accuracy * 100);
+    if (status) status.textContent = `${spot.subject} • ${spot.category} — ${accuracy}% (${spot.total} ATTEMPTS)`;
+    if (button) { button.disabled = false; button.textContent = "TRAIN"; }
+}
+
+function startWeakSpotFromBoard() {
+    const spot = currentWeakSpot();
+    if (!spot) return;
+    const bank = getActiveQuestionBank();
+    const pool = QUIZ_TYPES.flatMap(quizType =>
+        (bank[spot.subject]?.[quizType] || []).filter(question => question.category === spot.category)
+    );
+    if (pool.length < 4) {
+        showItemFeedback("Not enough questions in this category yet.");
+        return;
+    }
+    closeQuestBoard();
+    startMistakeVaultDrill(shuffleArray([...pool]).slice(0, 10), "TRAIN");
 }
 
 const SUBJECT_STATS_KEY = "proudGeonQuizSubjectStatsV1";
@@ -3486,6 +3785,7 @@ function continueJourney() {
 function updateHomeSubjectUnlocks() {
     renderMistakeVaultHome();
     renderArcadeHome();
+    renderQuestHome();
     const questionerIndicator = document.getElementById("homeQuestionerIndicator");
     if (questionerIndicator) {
         questionerIndicator.textContent = getActiveQuestioner() === "new" ? "QUESTIONER: NEW" : "QUESTIONER: PREVIOUS";
@@ -3703,7 +4003,7 @@ function updateQuizDisplay() {
             ? `BOSS ${quizState.boss.served + 1}/${quizState.boss.chain}`
             : (isReviewerActive()
                 ? "REVIEW"
-                : (isVaultDrillActive() ? `PRACTICE ${level}` : (isDailyChallengeActive() ? `DAILY ${level}` : level))));
+                : (isVaultDrillActive() ? `${quizState.drillLabel || "PRACTICE"} ${level}` : (isDailyChallengeActive() ? `DAILY ${level}` : level))));
     if (coins) coins.textContent = quizState.coins;
     if (score) score.textContent = quizState.score;
     if (points) points.textContent = quizState.points;
@@ -3955,6 +4255,7 @@ function completeBossChain() {
     checkSpecialAchievementOnLevelComplete();
 
     grantBossChest(levelCompleted);
+    bumpQuestCounter("bossBeaten", 1);
 
     setQuizProgress(quizState.subject, quizState.quizType, Math.max(getQuizProgress(quizState.subject, quizState.quizType), levelCompleted));
     recordQuizLevelCompleted(quizState.subject, quizState.quizType, levelCompleted);
@@ -3971,6 +4272,7 @@ function completeBossChain() {
         quizState.points += PERFECT_LEVEL_POINTS;
         quizState.score += PERFECT_LEVEL_SCORE;
         addPerfectLevel();
+        bumpQuestCounter("perfect", 1);
         showStreakFeedback(`🏅 PERFECT BOSS\n+${perfectCoins} COINS • +${PERFECT_LEVEL_POINTS} POINTS`, 1800, "combo");
     }
 
@@ -4135,6 +4437,7 @@ function handleQuizAnswer(value, timedOut = false, button = null) {
         gameData.correctAnswers = Number(gameData.correctAnswers || 0) + 1;
         quizState.levelCorrectAnswers = safeNonNegativeInt(quizState.levelCorrectAnswers, 0) + 1;
         recordSubjectAnswerStat(quizState.subject, true);
+        recordCategoryAnswerStat(quizState.subject, quizState.questions[quizState.index]?.category, true);
 
         const reward = getDifficultyReward(quizState.index + 1);
         const nextStreak = safeNonNegativeInt(quizState.streak, 0, 100000) + 1;
@@ -4158,7 +4461,10 @@ function handleQuizAnswer(value, timedOut = false, button = null) {
         if (speedBonus) {
             showStreakFeedback(`⚡ FAST ANSWER\n+${speedBonus * coinMultiplier} COINS`, 1200, "combo");
         }
+        bumpQuestCounter("answered", 1);
+        if (speedBonus) bumpQuestCounter("fast", 1);
         registerCorrectStreakAnswer();
+        raiseQuestCounter("streak", quizState.streak);
         checkSpecialAchievementOnCorrect();
         playAudioElement("correctSound");
 
@@ -4180,6 +4486,8 @@ function handleQuizAnswer(value, timedOut = false, button = null) {
         } else {
             gameData.totalQuestions = Number(gameData.totalQuestions || 0) + 1;
             recordSubjectAnswerStat(quizState.subject, false);
+            recordCategoryAnswerStat(quizState.subject, quizState.questions[quizState.index]?.category, false);
+            bumpQuestCounter("answered", 1);
             quizState.itemState.awaitingSecondChance = false;
             breakQuizStreak();
             quizState.lives -= 1;
@@ -4299,6 +4607,8 @@ function nextQuizStep() {
         quizState.itemState.awaitingSecondChance = false;
         gameData.totalQuestions = Number(gameData.totalQuestions || 0) + 1;
         recordSubjectAnswerStat(quizState.subject, false);
+        recordCategoryAnswerStat(quizState.subject, quizState.questions[quizState.index]?.category, false);
+        bumpQuestCounter("answered", 1);
         breakQuizStreak();
         quizState.lives -= 1;
         if (!isDailyChallengeActive()) {
@@ -4343,6 +4653,7 @@ function nextQuizStep() {
         quizState.points += PERFECT_LEVEL_POINTS;
         quizState.score += PERFECT_LEVEL_SCORE;
         addPerfectLevel();
+        bumpQuestCounter("perfect", 1);
         showStreakFeedback(`🏅 PERFECT LEVEL\n+${perfectCoins} COINS • +${PERFECT_LEVEL_POINTS} POINTS`, 1800, "combo");
     }
 

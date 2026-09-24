@@ -10831,3 +10831,133 @@ body.arcade-active .quiz-status { display: none !important; }
   letter-spacing: .5px;
   white-space: nowrap;
 }
+
+/* =========================================================
+   QUEST BOARD + WEAK-SPOT TRAINING
+========================================================= */
+
+.quest-board-card {
+  width: 100%;
+  margin: 14px 0 0;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-card);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.quest-board-card:active { transform: scale(.99); }
+.quest-board-icon { font-size: 28px; line-height: 1; }
+.quest-board-copy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 3px; }
+.quest-board-copy strong { font-size: 14px; letter-spacing: .5px; }
+.quest-board-copy small { font-size: 10px; opacity: .78; }
+.quest-board-arrow { font-size: 22px; font-weight: 800; }
+
+.quest-board-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 10050;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: rgba(0, 0, 0, .68);
+}
+.quest-board-panel.show { display: flex; }
+.quest-board-box {
+  width: 100%;
+  max-width: 520px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 16px;
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-card);
+  background: var(--surface-0);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-card);
+}
+.quest-board-back { align-self: flex-start; }
+.quest-board-box h2 { margin: 0; font-size: 20px; letter-spacing: 1px; text-align: center; }
+.quest-board-subtitle { margin: 0; font-size: 9px; letter-spacing: 1px; text-align: center; color: var(--text-muted); }
+.quest-list { display: flex; flex-direction: column; gap: 8px; }
+.quest-list h3 { margin: 2px 0 0; font-size: 12px; letter-spacing: 1.2px; color: var(--text-secondary); }
+
+.quest-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-1);
+}
+.quest-row.quest-ready { border-color: var(--success); }
+.quest-row.quest-claimed { opacity: .7; }
+.quest-icon { flex: 0 0 auto; font-size: 22px; line-height: 1; }
+.quest-copy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 5px; }
+.quest-copy strong { font-size: 11px; letter-spacing: .3px; }
+.quest-bar {
+  position: relative;
+  display: block;
+  height: 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-0);
+  overflow: hidden;
+}
+.quest-bar-fill { display: block; height: 100%; background: linear-gradient(90deg, var(--success), var(--accent)); }
+.quest-count { flex: 0 0 auto; font-size: 10px; font-weight: 900; color: var(--text-secondary); white-space: nowrap; }
+.quest-claim {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .5px;
+  cursor: pointer;
+}
+.quest-claim-ready { border-color: var(--success); color: var(--success); }
+.quest-claim:disabled { opacity: .6; cursor: default; }
+
+.quest-training {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 2px dashed var(--accent-2);
+  border-radius: var(--radius-control);
+  background: var(--surface-1);
+}
+.quest-training-copy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 3px; }
+.quest-training-copy strong { font-size: 12px; letter-spacing: .5px; }
+.quest-training-copy small { font-size: 9px; color: var(--text-muted); letter-spacing: .3px; }
+#weakSpotTrainButton {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 2px solid var(--accent-2);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .5px;
+  cursor: pointer;
+}
+#weakSpotTrainButton:disabled { opacity: .5; cursor: default; }
+
+@media (max-width: 375px) {
+  .quest-row { padding: 8px 10px; }
+  .quest-board-box h2 { font-size: 18px; }
+}

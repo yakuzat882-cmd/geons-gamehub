@@ -586,6 +586,77 @@ async function run(origin, server) {
   window.closeQuizVisualOnly();
   window.document.body.classList.remove("quiz-active");
 
+  /* -------------------------------------------------------- quest board + weak spot */
+  window.setQuestioner("previous");
+  window.openQuestBoard();
+  await wait(200);
+  const dailyRows = window.document.querySelectorAll("#questBoardDaily .quest-row").length;
+  const weeklyRows = window.document.querySelectorAll("#questBoardWeekly .quest-row").length;
+  const homeStatus = document_getText(window, "questBoardHomeStatus");
+  check("the quest board shows three daily and three weekly quests",
+    dailyRows === 3 && weeklyRows === 3 && /DAILY/.test(homeStatus),
+    `daily rows ${dailyRows}, weekly rows ${weeklyRows}, home "${homeStatus}"`);
+
+  /* Answering a real question moves the daily counter. */
+  const answeredBefore = window.eval("loadQuestCounters().day.fields.answered");
+  window.closeQuestBoard();
+  window.openSubjectSelection("MATH");
+  window.openLevelSelection("A");
+  window.startQuizAtSelectedLevel("A", 6);
+  await wait(220);
+  answerThroughUi(window, sample.previous, true);
+  await wait(230);
+  const answeredAfter = window.eval("loadQuestCounters().day.fields.answered");
+  check("answering questions feeds the quest counters",
+    answeredAfter === answeredBefore + 1,
+    `day answered ${answeredBefore} → ${answeredAfter}`);
+
+  /* A finished quest pays its reward exactly once. */
+  const todayDef = window.eval("GeonQuests.questsForDay(getDailyChallengeDate(), 'previous')[0]");
+  const rewardsText = JSON.stringify(todayDef.reward);
+  const itemsBefore = window.eval("Object.values(itemInventory).reduce((a, b) => a + Number(b || 0), 0)");
+  const coinsBefore = Number(window.eval("gameData.coins"));
+  window.eval(`bumpQuestCounter('${todayDef.field}', ${todayDef.target})`);
+  await wait(150);
+  const firstClaim = window.eval(`claimQuest('${todayDef.id}')`);
+  const itemsAfterFirst = window.eval("Object.values(itemInventory).reduce((a, b) => a + Number(b || 0), 0)");
+  const coinsAfterFirst = Number(window.eval("gameData.coins"));
+  const secondClaim = window.eval(`claimQuest('${todayDef.id}')`);
+  const coinsAfterSecond = window.eval("gameData.coins");
+  const expectItems = Object.values(todayDef.reward?.items || {}).reduce((a, b) => a + Number(b || 0), 0);
+  const expectCoins = Number(todayDef.reward?.coins || 0);
+  check("a quest reward pays coins and items, and only once",
+    firstClaim === true && secondClaim === false &&
+    coinsAfterFirst === coinsBefore + expectCoins &&
+    expectCoins > 0 &&
+    coinsAfterSecond === coinsAfterFirst &&
+    itemsAfterFirst === itemsBefore + expectItems,
+    `${todayDef.id}: coins ${coinsBefore} → ${coinsAfterFirst} → ${coinsAfterSecond} (+${expectCoins} coin reward), items +${itemsAfterFirst - itemsBefore}, reward ${rewardsText}, home "${document_getText(window, "questBoardHomeStatus")}"`);
+
+  /* Low accuracy in a category surfaces on the training footer and starts a drill. */
+  for (let trial = 0; trial < 6; trial += 1) window.eval(`recordCategoryAnswerStat("MATH", "ADDITION", ${trial === 0})`);
+  await wait(120);
+  const spot = window.eval("currentWeakSpot()");
+  window.openQuestBoard();
+  await wait(220);
+  const weakStatus = document_getText(window, "weakSpotStatus");
+  const trainButton = window.document.getElementById("weakSpotTrainButton");
+  check("a weak category is reported with its accuracy on the quest board",
+    spot && spot.category === "ADDITION" && /ADDITION/.test(weakStatus) && trainButton.disabled === false,
+    `weak spot ${spot ? `${spot.subject}/${spot.category}` : "none"}, status "${weakStatus}"`);
+  const coinsBeforeTrain = window.eval("gameData.coins");
+  trainButton.click();
+  await wait(260);
+  const trainState = quizStateNow(window);
+  const trainCategories = new Set((trainState.questions || []).map(question => question.category));
+  check("the TRAIN button starts a free drill of the weakest category",
+    trainState.mode === "vault" && trainState.drillLabel === "TRAIN" &&
+    trainCategories.size === 1 && trainCategories.has("ADDITION") &&
+    trainState.questions.length >= 4 && window.eval("gameData.coins") === coinsBeforeTrain,
+    `mode ${trainState.mode}, label ${trainState.drillLabel}, ${trainState.questions.length} question(s) from [${[...trainCategories]}]`);
+  window.closeQuizScreen();
+  await wait(220);
+
   check("no JavaScript console errors from the questioner", problems.length === 0,
     problems.slice(0, 3).join(" | ") || "clean");
 
