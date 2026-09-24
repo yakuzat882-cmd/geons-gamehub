@@ -657,6 +657,32 @@ async function run(origin, server) {
   window.closeQuizScreen();
   await wait(220);
 
+  /* -------------------------------------------------------- achievement hall */
+  window.openAchievementHall();
+  await wait(200);
+  const hallCards = window.document.querySelectorAll("#achievementHallGrid .hall-card");
+  const rarityAttr = [...hallCards].filter(card => card.getAttribute("data-rarity")).length;
+  const summaryText = document_getText(window, "achievementHallHomeSummary");
+  const homeHallStatus = document_getText(window, "achievementHallHomeStatus");
+  const bestStreak = window.eval("getAllTimeBestStreak()");
+  const streakCard = [...hallCards].find(card => card.querySelector(".hall-rarity") &&
+      card.querySelector(".hall-rarity").textContent.trim() === "RARE" &&
+      card.innerHTML.includes("hall-progress"));
+  const streakProgress = streakCard ? streakCard.querySelector(".hall-progress").textContent.trim() : "";
+  check("the achievement hall lists every milestone with a rarity tier",
+    hallCards.length === 12 && rarityAttr === 12 &&
+    /\d+\/12 UNLOCKED — COMMON \d+\/\d+ • RARE \d+\/\d+ • EPIC \d+\/\d+ • LEGENDARY \d+\/\d+/.test(summaryText) &&
+    /\d+\/12 UNLOCKED/.test(homeHallStatus),
+    `${hallCards.length} cards (${rarityAttr} rated), summary "${summaryText}", home "${homeHallStatus}"`);
+  check("locked hall cards track live progress from the real counters",
+    /^\d+\/10$/.test(streakProgress) === /^\d+\/10$/.test(`${Math.min(bestStreak, 10)}/10`) &&
+    (bestStreak >= 10 || streakProgress === `${Math.max(0, Math.min(10, bestStreak))}/10`),
+    bestStreak >= 10
+      ? `streak already unlocked (all-time best ${bestStreak})`
+      : `streak card shows ${streakProgress || "nothing"}, all-time best is ${bestStreak}`);
+  window.closeAchievementHall();
+  await wait(150);
+
   check("no JavaScript console errors from the questioner", problems.length === 0,
     problems.slice(0, 3).join(" | ") || "clean");
 

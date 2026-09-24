@@ -10961,3 +10961,73 @@ body.arcade-active .quiz-status { display: none !important; }
   .quest-row { padding: 8px 10px; }
   .quest-board-box h2 { font-size: 18px; }
 }
+
+/* =========================================================
+   ACHIEVEMENT HALL (rarity cards reuse quest-panel chrome)
+========================================================= */
+.hall-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin: 14px 0;
+}
+.hall-card {
+  border: 2px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface-1);
+  padding: 12px 14px;
+  text-align: left;
+}
+.hall-card.unlocked { border-color: var(--accent-2); }
+.hall-card.locked { opacity: .75; }
+.hall-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.hall-icon { font-size: 22px; }
+.hall-rarity {
+  margin-left: auto;
+  font-size: 10px;
+  letter-spacing: 2px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--text-secondary);
+  color: var(--text-secondary);
+}
+.hall-card[data-rarity="RARE"] .hall-rarity { border-color: var(--accent); color: var(--accent); }
+.hall-card[data-rarity="EPIC"] .hall-rarity { border-color: var(--accent-2); color: var(--accent-2); }
+.hall-card[data-rarity="LEGENDARY"] .hall-rarity { border-color: var(--warning); color: var(--warning); }
+.hall-card[data-rarity="LEGENDARY"].unlocked { border-color: var(--warning); }
+.hall-card small {
+  display: block;
+  margin: 8px 0 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.hall-date { font-size: 11px; letter-spacing: 1px; color: var(--accent); font-weight: 700; }
+.hall-bar {
+  display: block;
+  height: 8px;
+  border-radius: var(--radius-card);
+  background: var(--surface-raised);
+  overflow: hidden;
+  margin: 6px 0 4px;
+}
+.hall-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-card);
+  background: var(--accent);
+  transition: width .25s ease;
+}
+.hall-progress {
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--text-secondary);
+}
+@media (min-width: 560px) {
+  .hall-grid { grid-template-columns: 1fr 1fr; }
+}

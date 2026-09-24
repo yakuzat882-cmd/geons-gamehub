@@ -73,7 +73,7 @@ test("Questioner banks contain no forbidden leading task/scenario labels", () =>
 });
 
 test("Story Quiz assets are part of the offline shell", () => {
-  assert.match(serviceWorker, /CACHE_VERSION\s*=\s*"proudgeonquiz-v11-2026-09-18-quest-board-v1"/);
+  assert.match(serviceWorker, /CACHE_VERSION\s*=\s*"proudgeonquiz-v12-2026-09-18-achievement-hall-v1"/);
   assert.match(serviceWorker, /"\.\/src\/story\/storyData\.js"/);
   assert.match(serviceWorker, /"\.\/src\/story\/storyQuiz\.js"/);
 });

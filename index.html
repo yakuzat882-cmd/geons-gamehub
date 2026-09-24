@@ -420,6 +420,19 @@
 </div>
 
 <!-- =================================
+     ACHIEVEMENT HALL PANEL
+================================== -->
+<div id="achievementHallPanel" class="quest-board-panel" role="dialog" aria-modal="true"
+     aria-labelledby="achievementHallTitle" aria-hidden="true">
+    <div class="quest-board-box">
+        <button type="button" class="quest-board-back" onclick="closeAchievementHall()">← BACK</button>
+        <h2 id="achievementHallTitle">🏆 ACHIEVEMENT HALL</h2>
+        <p class="quest-board-subtitle" id="achievementHallHomeSummary">0/12 UNLOCKED</p>
+        <div id="achievementHallGrid" class="hall-grid" aria-live="polite"></div>
+    </div>
+</div>
+
+<!-- =================================
      STORY QUIZ — STORY SELECTION
 ================================== -->
 <div id="storySelectionPanel" class="story-quiz-panel" role="dialog" aria-modal="true"
@@ -959,6 +972,18 @@
         <span class="quest-board-copy">
             <strong>QUEST BOARD</strong>
             <small id="questBoardHomeStatus">3 DAILY • 3 WEEKLY</small>
+        </span>
+        <span class="quest-board-arrow" aria-hidden="true">→</span>
+    </button>
+
+    <!-- =================================
+         ACHIEVEMENT HALL — RARITY TIERS + PROGRESS
+    ================================== -->
+    <button type="button" id="achievementHallCard" class="quest-board-card" onclick="openAchievementHall()" aria-label="Open the achievement hall">
+        <span class="quest-board-icon" aria-hidden="true">🏆</span>
+        <span class="quest-board-copy">
+            <strong>ACHIEVEMENT HALL</strong>
+            <small id="achievementHallHomeStatus">LEGENDARY MILESTONES</small>
         </span>
         <span class="quest-board-arrow" aria-hidden="true">→</span>
     </button>
@@ -1841,7 +1866,8 @@
 <script src="src/quiz/arcadeRanks.js"></script>
 <script src="src/progression/starRatings.js"></script>
 <script src="src/progression/quests.js"></script>
-<script src="src/progression/weakSpot.js"></script>
+    <script src="src/progression/weakSpot.js"></script>
+    <script src="src/progression/achievementGallery.js"></script>
 <script src="src/progression/streaks.js"></script>
 <script src="src/data/dailyChallenge.js"></script>
 <script src="src/audio/audioManager.js"></script>

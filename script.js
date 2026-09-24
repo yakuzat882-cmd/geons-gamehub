@@ -3645,6 +3645,89 @@ function startWeakSpotFromBoard() {
     startMistakeVaultDrill(shuffleArray([...pool]).slice(0, 10), "TRAIN");
 }
 
+/* ========================================
+   ACHIEVEMENT HALL — special achievements with
+   rarity tiers and live progress from real counters.
+======================================== */
+function achievementSnapshot() {
+    const subjectLevels = {};
+    titleSubjects.forEach(subject => {
+        subjectLevels[subject] = getOverallSubjectHighestCompletedLevel(subject);
+    });
+    const totalCompletedLevels = titleSubjects.reduce(
+        (sum, subject) => sum + Number(subjectLevels[subject] || 0), 0);
+    return {
+        bestStreak: getAllTimeBestStreak(),
+        perfectLevels: getPerfectLevelCount(),
+        points: safeNonNegativeInt(gameData.points, 0),
+        coins: safeNonNegativeInt(gameData.coins, 0),
+        subjectLevels,
+        totalCompletedLevels
+    };
+}
+
+function buildAchievementGalleryCards() {
+    const helpers = window.GeonAchievements;
+    if (!helpers) return "";
+    const state = loadSpecialAchievements();
+    const snapshot = achievementSnapshot();
+    return Object.entries(SPECIAL_ACHIEVEMENT_DEFS).map(([id, def]) => {
+        const unlocked = Boolean(state[id]?.unlocked);
+        const rarity = helpers.rarityFor(id);
+        const date = unlocked && state[id]?.date
+            ? String(state[id].date).slice(0, 10)
+            : "";
+        const progress = helpers.progressFor(id, snapshot);
+        const pct = Math.round(progress.ratio * 100);
+        const body = unlocked
+            ? `<small>${def.description}</small><span class="hall-date">UNLOCKED ${date ? `ON ${date}` : "✓"}</span>`
+            : `<small>${def.description}</small>
+               <span class="hall-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="${def.title} progress">
+                   <span class="hall-bar-fill" style="width:${pct}%"></span>
+               </span>
+               <span class="hall-progress">${progress.current}/${progress.target}</span>`;
+        return `<div class="hall-card ${unlocked ? "unlocked" : "locked"}" data-rarity="${rarity}">
+            <div class="hall-card-head">
+                <span class="hall-icon" aria-hidden="true">${unlocked ? def.icon : "🔒"}</span>
+                <strong>${unlocked ? def.title : "LOCKED"}</strong>
+                <span class="hall-rarity">${rarity}</span>
+            </div>
+            ${body}
+        </div>`;
+    }).join("");
+}
+
+function renderAchievementHall() {
+    const helpers = window.GeonAchievements;
+    const grid = document.getElementById("achievementHallGrid");
+    const summary = document.getElementById("achievementHallHomeSummary");
+    if (!helpers || !grid) return;
+    grid.innerHTML = buildAchievementGalleryCards();
+    const counts = helpers.summarize(loadSpecialAchievements(), achievementSnapshot(), Object.keys(SPECIAL_ACHIEVEMENT_DEFS));
+    const tiers = helpers.RARITY_ORDER
+        .map(tier => `${tier} ${counts.byRarity[tier].unlocked}/${counts.byRarity[tier].total}`)
+        .join(" • ");
+    if (summary) summary.textContent = `${counts.unlocked}/${counts.total} UNLOCKED — ${tiers}`;
+    const home = document.getElementById("achievementHallHomeStatus");
+    if (home) home.textContent = `${counts.unlocked}/${counts.total} UNLOCKED`;
+}
+
+function openAchievementHall() {
+    const panel = document.getElementById("achievementHallPanel");
+    if (!panel) return;
+    renderAchievementHall();
+    panel.classList.add("show");
+    panel.setAttribute("aria-hidden", "false");
+}
+
+function closeAchievementHall() {
+    const panel = document.getElementById("achievementHallPanel");
+    if (!panel) return;
+    if (panel.contains(document.activeElement)) document.activeElement.blur();
+    panel.classList.remove("show");
+    panel.setAttribute("aria-hidden", "true");
+}
+
 const SUBJECT_STATS_KEY = "proudGeonQuizSubjectStatsV1";
 
 function subjectStatsStorageKey() {
@@ -3786,6 +3869,7 @@ function updateHomeSubjectUnlocks() {
     renderMistakeVaultHome();
     renderArcadeHome();
     renderQuestHome();
+    renderAchievementHall();
     const questionerIndicator = document.getElementById("homeQuestionerIndicator");
     if (questionerIndicator) {
         questionerIndicator.textContent = getActiveQuestioner() === "new" ? "QUESTIONER: NEW" : "QUESTIONER: PREVIOUS";

@@ -1,4 +1,4 @@
-const CACHE_VERSION = "proudgeonquiz-v11-2026-09-18-quest-board-v1";
+const CACHE_VERSION = "proudgeonquiz-v12-2026-09-18-achievement-hall-v1";
 const SHELL = [
   "./",
   "./index.html",
@@ -14,6 +14,7 @@ const SHELL = [
   "./src/progression/starRatings.js",
   "./src/progression/quests.js",
   "./src/progression/weakSpot.js",
+  "./src/progression/achievementGallery.js",
   "./src/progression/streaks.js",
   "./src/data/dailyChallenge.js",
   "./src/audio/audioManager.js",
