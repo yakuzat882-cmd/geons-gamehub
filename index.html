@@ -433,6 +433,20 @@
 </div>
 
 <!-- =================================
+     DAILY REWARDS PANEL
+================================== -->
+<div id="dailyRewardsPanel" class="quest-board-panel" role="dialog" aria-modal="true"
+     aria-labelledby="dailyRewardsTitle" aria-hidden="true">
+    <div class="quest-board-box">
+        <button type="button" class="quest-board-back" onclick="closeDailyRewards()">← BACK</button>
+        <h2 id="dailyRewardsTitle">🎁 DAILY REWARDS</h2>
+        <p class="quest-board-subtitle" id="dailyRewardStreak">STREAK 0 • BEST 0</p>
+        <div id="dailyRewardGrid" class="dr-grid" aria-live="polite"></div>
+        <button type="button" id="dailyRewardClaimButton" class="dr-claim-btn" onclick="claimDailyReward()">CLAIM DAY 1</button>
+    </div>
+</div>
+
+<!-- =================================
      STORY QUIZ — STORY SELECTION
 ================================== -->
 <div id="storySelectionPanel" class="story-quiz-panel" role="dialog" aria-modal="true"
@@ -984,6 +998,18 @@
         <span class="quest-board-copy">
             <strong>ACHIEVEMENT HALL</strong>
             <small id="achievementHallHomeStatus">LEGENDARY MILESTONES</small>
+        </span>
+        <span class="quest-board-arrow" aria-hidden="true">→</span>
+    </button>
+
+    <!-- =================================
+         DAILY REWARDS — 7-DAY LOGIN STREAK
+    ================================== -->
+    <button type="button" id="dailyRewardCard" class="quest-board-card" onclick="openDailyRewards()" aria-label="Open daily rewards">
+        <span class="quest-board-icon" aria-hidden="true">🎁</span>
+        <span class="quest-board-copy">
+            <strong>DAILY REWARDS</strong>
+            <small id="dailyRewardHomeStatus">DAY 1 REWARD READY</small>
         </span>
         <span class="quest-board-arrow" aria-hidden="true">→</span>
     </button>
@@ -1868,6 +1894,7 @@
 <script src="src/progression/quests.js"></script>
     <script src="src/progression/weakSpot.js"></script>
     <script src="src/progression/achievementGallery.js"></script>
+    <script src="src/progression/dailyRewards.js"></script>
 <script src="src/progression/streaks.js"></script>
 <script src="src/data/dailyChallenge.js"></script>
 <script src="src/audio/audioManager.js"></script>

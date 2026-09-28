@@ -3728,6 +3728,152 @@ function closeAchievementHall() {
     panel.setAttribute("aria-hidden", "true");
 }
 
+/* ========================================
+   DAILY REWARDS — seven-day login streak cycle.
+   One shared wallet across both questioners: the
+   calendar answers "did you open the game", not
+   "which question bank did you play".
+======================================== */
+const DAILY_REWARD_KEY = "proudGeonQuizDailyRewardsV1";
+
+function dailyRewardHelpers() {
+    return typeof window !== "undefined" ? window.GeonDailyRewards : null;
+}
+
+function loadDailyRewardState() {
+    const helpers = dailyRewardHelpers();
+    let raw = null;
+    try {
+        raw = JSON.parse(localStorage.getItem(DAILY_REWARD_KEY) || "null");
+    } catch (error) {
+        raw = null;
+    }
+    return helpers ? helpers.sanitizeState(raw) : { lastClaim: null, streak: 0, longest: 0 };
+}
+
+function saveDailyRewardState(state) {
+    try {
+        localStorage.setItem(DAILY_REWARD_KEY, JSON.stringify(state));
+    } catch (error) {
+        console.warn("Daily reward state could not be saved:", error);
+    }
+}
+
+function dailyRewardPreview() {
+    const helpers = dailyRewardHelpers();
+    return helpers ? helpers.preview(loadDailyRewardState(), getDailyChallengeDate()) : null;
+}
+
+/*
+ * Same payout rule as quest claims: saveGlobalGameData copies quizState back
+ * over gameData, so the live wallet is raised in step and the reward survives
+ * the next save.
+ */
+function payDailyReward(reward) {
+    const coins = safeNonNegativeInt(reward?.coins, 0);
+    gameData.coins = safeNonNegativeInt(gameData.coins, 0) + coins;
+    if (quizState && typeof quizState === "object") {
+        quizState.coins = safeNonNegativeInt(quizState.coins, 0) + coins;
+    }
+    const gifts = [];
+    if (coins) gifts.push(`${coins} COINS`);
+    for (const [itemId, amount] of Object.entries(reward?.items || {})) {
+        const count = Math.max(0, Math.min(9, Math.floor(Number(amount) || 0)));
+        if (!count || !SHOP_ITEMS[itemId]) continue;
+        itemInventory[itemId] = safeNonNegativeInt(itemInventory[itemId], 0) + count;
+        gifts.push(`${count} × ${SHOP_ITEMS[itemId].name}`);
+    }
+    if (Object.keys(reward?.items || {}).length) saveItemInventory();
+    saveGlobalGameData();
+    return gifts;
+}
+
+function claimDailyReward() {
+    const helpers = dailyRewardHelpers();
+    if (!helpers) return false;
+    const result = helpers.claim(loadDailyRewardState(), getDailyChallengeDate());
+    if (!result) {
+        showItemFeedback("🎁 DAILY REWARD\nCOME BACK TOMORROW FOR YOUR NEXT GIFT!");
+        renderDailyRewardsPanel();
+        return false;
+    }
+    saveDailyRewardState(result.state);
+    const gifts = payDailyReward(result.reward);
+    const streakLabel = `STREAK ${result.state.streak} DAY${result.state.streak === 1 ? "" : "S"}`;
+    showItemFeedback(`🎁 DAY ${result.day} DAILY REWARD\n+ ${gifts.join(" + ")}\n${streakLabel}`);
+    renderDailyRewardsPanel();
+    renderDailyRewardHome();
+    return true;
+}
+
+function renderDailyRewardHome() {
+    const status = document.getElementById("dailyRewardHomeStatus");
+    if (!status) return;
+    const next = dailyRewardPreview();
+    if (!next) {
+        status.textContent = "DAILY GIFT";
+        return;
+    }
+    status.textContent = next.claimed
+        ? `CLAIMED • STREAK ${next.streak}`
+        : `DAY ${next.day} REWARD READY`;
+}
+
+function dailyRewardCellHtml(day, state, today) {
+    const helpers = dailyRewardHelpers();
+    const reward = helpers.rewardForDay(day);
+    const completed = helpers.completedDays(state, today);
+    const next = helpers.preview(state, today);
+    const cssClass = day <= completed ? "claimed" : (day === next.day ? "today" : "future");
+    const itemText = Object.entries(reward.items)
+        .filter(([itemId, amount]) => amount > 0 && SHOP_ITEMS[itemId])
+        .map(([itemId, amount]) => SHOP_ITEMS[itemId] ? `${amount}× ${SHOP_ITEMS[itemId].name}` : "")
+        .filter(Boolean)
+        .join("\n");
+    const badge = day <= completed ? "✓" : (day === next.day ? "🎁" : String(day));
+    return `<div class="dr-cell dr-${cssClass}">
+        <span class="dr-day">DAY ${day}</span>
+        <span class="dr-badge" aria-hidden="true">${badge}</span>
+        <span class="dr-coins">+${reward.coins}</span>
+        ${itemText ? `<span class="dr-items">${itemText}</span>` : ""}
+    </div>`;
+}
+
+function renderDailyRewardsPanel() {
+    const helpers = dailyRewardHelpers();
+    const grid = document.getElementById("dailyRewardGrid");
+    if (!helpers || !grid) return;
+    const state = loadDailyRewardState();
+    const today = getDailyChallengeDate();
+    grid.innerHTML = helpers.CYCLE.map(reward => dailyRewardCellHtml(reward.day, state, today)).join("");
+    const next = helpers.preview(state, today);
+    const streakLine = document.getElementById("dailyRewardStreak");
+    if (streakLine) {
+        streakLine.textContent = `STREAK ${state.streak} • BEST ${state.longest} • ${next.claimed ? `NEXT: DAY ${helpers.dayOfCycle(next.day + 1)} TOMORROW` : `TODAY: DAY ${next.day}`}`;
+    }
+    const button = document.getElementById("dailyRewardClaimButton");
+    if (button) {
+        button.disabled = Boolean(next.claimed);
+        button.textContent = next.claimed ? "✓ CLAIMED TODAY" : "CLAIM DAY " + next.day;
+    }
+}
+
+function openDailyRewards() {
+    const panel = document.getElementById("dailyRewardsPanel");
+    if (!panel) return;
+    renderDailyRewardsPanel();
+    panel.classList.add("show");
+    panel.setAttribute("aria-hidden", "false");
+}
+
+function closeDailyRewards() {
+    const panel = document.getElementById("dailyRewardsPanel");
+    if (!panel) return;
+    if (panel.contains(document.activeElement)) document.activeElement.blur();
+    panel.classList.remove("show");
+    panel.setAttribute("aria-hidden", "true");
+}
+
 const SUBJECT_STATS_KEY = "proudGeonQuizSubjectStatsV1";
 
 function subjectStatsStorageKey() {
@@ -3870,6 +4016,7 @@ function updateHomeSubjectUnlocks() {
     renderArcadeHome();
     renderQuestHome();
     renderAchievementHall();
+    renderDailyRewardHome();
     const questionerIndicator = document.getElementById("homeQuestionerIndicator");
     if (questionerIndicator) {
         questionerIndicator.textContent = getActiveQuestioner() === "new" ? "QUESTIONER: NEW" : "QUESTIONER: PREVIOUS";

@@ -594,7 +594,7 @@ async function run(origin, server) {
   const weeklyRows = window.document.querySelectorAll("#questBoardWeekly .quest-row").length;
   const homeStatus = document_getText(window, "questBoardHomeStatus");
   check("the quest board shows three daily and three weekly quests",
-    dailyRows === 3 && weeklyRows === 3 && /DAILY/.test(homeStatus),
+    dailyRows === 3 && weeklyRows === 3 && (/DAILY/.test(homeStatus) || /REWARDS READY TO CLAIM/.test(homeStatus)),
     `daily rows ${dailyRows}, weekly rows ${weeklyRows}, home "${homeStatus}"`);
 
   /* Answering a real question moves the daily counter. */
@@ -682,6 +682,38 @@ async function run(origin, server) {
       : `streak card shows ${streakProgress || "nothing"}, all-time best is ${bestStreak}`);
   window.closeAchievementHall();
   await wait(150);
+
+  /* -------------------------------------------------------- daily rewards */
+  window.openDailyRewards();
+  await wait(200);
+  const drCells = window.document.querySelectorAll("#dailyRewardGrid .dr-cell");
+  const drButton = window.document.getElementById("dailyRewardClaimButton");
+  const todayCell = window.document.querySelector("#dailyRewardGrid .dr-cell.dr-today");
+  check("the daily rewards calendar shows the seven-day cycle with today highlighted",
+    drCells.length === 7 && todayCell && drButton && drButton.disabled === false,
+    `${drCells ? drCells.length : 0} cells, today = ${todayCell ? todayCell.getAttribute("class") : "none"}, button "${drButton ? drButton.textContent.trim() : "missing"}"`);
+  const dayOneCoins = Number(window.eval("GeonDailyRewards.CYCLE[0].coins"));
+  const drCoinsBefore = Number(window.eval("gameData.coins"));
+  drButton.click();
+  await wait(220);
+  const drCoinsAfter = Number(window.eval("gameData.coins"));
+  const claimedCell = window.document.querySelector("#dailyRewardGrid .dr-cell.dr-claimed");
+  const streakLine = document_getText(window, "dailyRewardStreak");
+  const claimAgain = window.eval("claimDailyReward()");
+  const drCoinsFinal = Number(window.eval("gameData.coins"));
+  check("claiming the daily gift pays exactly once and settles the day",
+    drCoinsAfter === drCoinsBefore + dayOneCoins &&
+    drCoinsFinal === drCoinsAfter &&
+    claimAgain === false &&
+    claimedCell && claimedCell.textContent.includes(`+${dayOneCoins}`) &&
+    /STREAK 1 • BEST 1/.test(streakLine) &&
+    drButton.disabled === true && /CLAIMED/.test(drButton.textContent),
+    `coins ${drCoinsBefore} → ${drCoinsAfter} → ${drCoinsFinal} (day-1 gift ${dayOneCoins}), second claim ${claimAgain}, streak "${streakLine}", button "${drButton.textContent.trim()}"`);
+  window.closeDailyRewards();
+  await wait(150);
+  check("the home card reflects the settled daily gift",
+    /CLAIMED • STREAK 1/.test(document_getText(window, "dailyRewardHomeStatus")),
+    `home "${document_getText(window, "dailyRewardHomeStatus")}"`);
 
   check("no JavaScript console errors from the questioner", problems.length === 0,
     problems.slice(0, 3).join(" | ") || "clean");
